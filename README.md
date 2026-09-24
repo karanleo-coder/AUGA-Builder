@@ -11,16 +11,23 @@ It ships two ways:
   install step required on the machine that runs it.
 - **A dev setup** — for working on the app itself (see [DEV.md](DEV.md)).
 
-## Get the packaged app
+## Download
 
-Grab the archive for your OS from the project's **GitHub Releases** page,
-unzip it, and run the app inside:
+<!-- DOWNLOADS:START (kept up to date by upload.sh) -->
+**[Latest release](https://github.com/karanleo-coder/AUGA-Builder/releases/latest)** · direct downloads:
 
-| OS | File | Run |
+| OS | Download | Run |
 |---|---|---|
-| Windows | `AUGA-Builder-windows-*.zip` | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder.exe` |
-| macOS | `AUGA-Builder-macos-*.tar.gz` | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder` (first launch: right-click → Open, since it isn't Apple-notarized) |
-| Linux | `AUGA-Builder-linux-*.tar.gz` | unzip, `cd AUGA-Builder && ./AUGA-Builder` |
+| Windows (64-bit) | [AUGA-Builder-windows-x64.zip](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-windows-x64.zip) | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder.exe` |
+| macOS (Apple Silicon) | [AUGA-Builder-macos-arm64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-macos-arm64.tar.gz) | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder` (first launch: right-click → Open, since it isn't Apple-notarized) |
+| Linux (64-bit) | [AUGA-Builder-linux-x64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-linux-x64.tar.gz) | unzip, `cd AUGA-Builder && ./AUGA-Builder` |
+<!-- DOWNLOADS:END -->
+
+These links always point at the newest release. GitHub builds them from
+this repo's source on every release — nothing is built on anyone's own
+machine.
+
+## Using the app
 
 It opens `http://127.0.0.1:8756` in your default browser automatically —
 that tab *is* the app. Closing it doesn't stop the server; quit by closing
@@ -43,36 +50,41 @@ Nothing about how a script works needs to change for the console to run it:
 scripts using plain `input()` (including password-style prompts) work with
 zero configuration.
 
-## For maintainers: building & publishing new packages
+## For maintainers: publishing a new release
 
 ```bash
 ./upload.sh
 ```
 
-This builds the frontend, packages a local build for your own OS as a sanity
-check, commits everything, and pushes to GitHub — then pushes a version tag,
-which triggers `.github/workflows/release.yml`. That workflow builds
-Windows, macOS and Linux packages in parallel on GitHub's own runners (this
-is what actually produces all three platforms — you can only build for the
-OS you're on locally) and publishes them as assets on a GitHub Release.
+That's the whole flow. It:
 
-For **where** it pushes: if you already have a git remote configured, it
-just uses that. Otherwise it asks — paste a repo URL (SSH, e.g.
-`git@github.com:you/AUGA-Builder.git`, or HTTPS) and it pushes there
-directly, or leave it blank and it creates a new GitHub repo for you via
-`gh` (default name `AUGA-Builder`, private). You can also skip the prompt:
+1. Pushes the project's source to GitHub (backend, frontend, build scripts —
+   never build outputs).
+2. Pushes a new version tag (`v1.0.0`, then `v1.0.1`, …).
+3. That tag starts the **Build & Release** workflow on GitHub, which builds
+   Windows, macOS and Linux packages on GitHub's own machines, test-launches
+   each one, and publishes them on a GitHub Release.
+4. Waits for that build to finish and prints the release link.
+
+Nothing is built on your own computer, and the download links above always
+point at the newest release.
+
+**Logging in:** it uses your existing GitHub CLI login (`gh auth login`), so
+it won't ask for a password. If your remote is an SSH link but your SSH key
+isn't added to GitHub, it switches that remote to HTTPS and pushes with your
+`gh` login instead.
+
+**Where it pushes:** the existing `origin` remote if there is one. Otherwise
+it asks you to paste a repo link, or creates a new repo named
+`AUGA-Builder` if you leave it blank. You can also pass the link directly:
 
 ```bash
-./upload.sh git@github.com:you/AUGA-Builder.git   # push straight to this remote
+./upload.sh git@github.com:you/AUGA-Builder.git   # push to this repo
 ./upload.sh --repo my-repo-name                   # create a new repo with this name
+./upload.sh --no-wait                             # don't wait for the GitHub build to finish
 ```
 
-Requires the [GitHub CLI](https://cli.github.com) (`gh`), logged in
-(`gh auth login`) — only needed when letting it create the repo for you;
-pushing to a URL you paste yourself just uses plain `git` (over SSH, so
-make sure your SSH key is added to GitHub). See the usage comments at the
-top of `upload.sh` for every option (`--repo`, `--public`, `--watch`,
-`--message`).
+See the comments at the top of `upload.sh` for every option.
 
 To build a local package yourself without publishing anything:
 

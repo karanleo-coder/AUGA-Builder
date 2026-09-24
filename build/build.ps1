@@ -13,7 +13,13 @@ $AppName = "AUGA-Builder"
 $RootDir = Split-Path -Parent $PSScriptRoot
 Set-Location $RootDir
 
-$ArchName = $env:PROCESSOR_ARCHITECTURE
+# Normalized arch names keep the release file names stable, so the README's
+# "latest release" download links never go stale.
+$ArchName = switch ($env:PROCESSOR_ARCHITECTURE) {
+    "AMD64" { "x64" }
+    "ARM64" { "arm64" }
+    default { $env:PROCESSOR_ARCHITECTURE.ToLower() }
+}
 Write-Host "==> Building $AppName for windows ($ArchName)"
 
 Write-Host "==> [1/5] Building frontend"

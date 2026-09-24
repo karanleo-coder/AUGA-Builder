@@ -15,7 +15,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH_NAME="$(uname -m)"
+# Normalized arch names keep the release file names stable, so the README's
+# "latest release" download links never go stale.
+case "$(uname -m)" in
+  x86_64|amd64) ARCH_NAME="x64" ;;
+  arm64|aarch64) ARCH_NAME="arm64" ;;
+  *) ARCH_NAME="$(uname -m)" ;;
+esac
 case "$OS_NAME" in
   darwin) PLATFORM_TAG="macos" ;;
   linux) PLATFORM_TAG="linux" ;;
