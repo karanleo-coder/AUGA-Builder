@@ -1,0 +1,85 @@
+import {
+  Bot,
+  Check,
+  ChevronRight,
+  Clock,
+  Cpu,
+  Database,
+  Download,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  Globe,
+  Hammer,
+  Home,
+  LayoutGrid,
+  type LucideIcon,
+  Menu,
+  Moon,
+  Package,
+  Play,
+  Plus,
+  RefreshCw,
+  Rocket,
+  Search,
+  Send,
+  Settings,
+  Sparkles,
+  Square,
+  Sun,
+  Terminal,
+  Trash2,
+  Upload,
+  Wand2,
+  X,
+  Zap,
+} from "lucide-react";
+
+/** Icon names a script can be assigned (shown in Settings + backend defaults). */
+export const SCRIPT_ICONS: Record<string, LucideIcon> = {
+  download: Download,
+  search: Search,
+  database: Database,
+  sparkles: Sparkles,
+  rocket: Rocket,
+  terminal: Terminal,
+  cpu: Cpu,
+  globe: Globe,
+  bot: Bot,
+  wand: Wand2,
+  package: Package,
+  zap: Zap,
+  hammer: Hammer,
+  git: GitBranch,
+  file: FileCode2,
+};
+
+export const SCRIPT_ICON_NAMES = Object.keys(SCRIPT_ICONS);
+
+export function scriptIcon(name: string): LucideIcon {
+  return SCRIPT_ICONS[name] ?? Sparkles;
+}
+
+export {
+  Check,
+  ChevronRight,
+  Clock,
+  Folder,
+  FolderOpen,
+  Home,
+  LayoutGrid,
+  Menu,
+  Moon,
+  Play,
+  Plus,
+  RefreshCw,
+  Send,
+  Settings,
+  Square,
+  Sun,
+  Trash2,
+  Upload,
+  X,
+};
+export type { LucideIcon };

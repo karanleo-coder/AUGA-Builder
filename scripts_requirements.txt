@@ -1,0 +1,8 @@
+# Dependencies for the example scripts themselves (installed into the same
+# .venv as the backend so the "Run" button works out of the box).
+requests==2.32.3
+pandas==2.2.3
+beautifulsoup4==4.12.3
+trafilatura==1.12.2
+tiktoken==0.8.0
+pyarrow==18.1.0

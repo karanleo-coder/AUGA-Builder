@@ -1,0 +1,16 @@
+.venv/
+node_modules/
+data/
+frontend/dist/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Build outputs — produced by build/build.sh, build/build.ps1, and CI.
+# Never committed: GitHub Actions rebuilds these from source per-OS and
+# attaches them to a Release instead.
+dist/
+build/.build-venv/
+build/.runtime-tmp/
+build/pyinstaller-work/
+*.spec.bak
