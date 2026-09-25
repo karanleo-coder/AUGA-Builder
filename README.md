@@ -156,8 +156,3 @@ unzipped). To also remove your scripts and settings, delete the
 
 Report problems or ideas on the
 [Issues page](https://github.com/karanleo-coder/AUGA-Builder/issues).
-
----
-
-Working on AUGA-Builder itself, or publishing a new version? See
-[DEV.md](DEV.md).
