@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { swatchFor } from "../colors";
-import { Home, LayoutGrid, Power, scriptIcon, Settings } from "../icons";
+import { Home, LayoutGrid, Power, scriptIcon, Settings, Table2 } from "../icons";
 import { useStore } from "../store";
 
 function groupByFolder<T extends { folder: string }>(items: T[]): Map<string, T[]> {
@@ -22,6 +22,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const runs = useStore((s) => s.runs);
   const showQuit = useStore((s) => s.packaged && s.mode === "browser");
   const quitApp = useStore((s) => s.quitApp);
+  const editorDirty = useStore((s) => !!s.editorFile?.dirty);
   const groups = groupByFolder(scripts);
   const activeCount = Object.values(runs).filter(
     (r) => r.status === "running" || r.status === "awaiting_input",
@@ -58,6 +59,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             >
               {activeCount}
             </span>
+          )}
+        </NavLink>
+        <NavLink to="/editor" className={navClass} style={({ isActive }) => ({ background: isActive ? "var(--bg-inset)" : undefined })}>
+          <Table2 size={17} />
+          Data Editor
+          {editorDirty && (
+            <span className="ml-auto h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} title="Unsaved changes" />
           )}
         </NavLink>
         <NavLink to="/settings" className={navClass} style={({ isActive }) => ({ background: isActive ? "var(--bg-inset)" : undefined })}>

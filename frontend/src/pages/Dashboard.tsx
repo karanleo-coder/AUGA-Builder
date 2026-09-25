@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { swatchFor } from "../colors";
 import { RunRing } from "../components/RunRing";
-import { Play, Plus, scriptIcon } from "../icons";
+import { Play, Plus, scriptIcon, Table2 } from "../icons";
 import { useStore } from "../store";
 
 export function Dashboard() {
@@ -10,6 +10,7 @@ export function Dashboard() {
   const runs = useStore((s) => s.runs);
   const runOrder = useStore((s) => s.runOrder);
   const startRun = useStore((s) => s.startRun);
+  const editorFile = useStore((s) => s.editorFile);
   const navigate = useNavigate();
   const [launching, setLaunching] = useState<string | null>(null);
 
@@ -37,6 +38,30 @@ export function Dashboard() {
             : "Nothing running. Launch a script below."}
         </p>
       </header>
+
+      <button
+        onClick={() => navigate("/editor")}
+        className="mb-10 flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-shadow hover:shadow-md"
+        style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
+      >
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+          style={{ background: "color-mix(in srgb, #22d3ee 15%, transparent)" }}
+        >
+          <Table2 size={22} color="#0891b2" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Data Editor</span>
+          <span className="block text-xs" style={{ color: "var(--text-muted)" }}>
+            {editorFile
+              ? `${editorFile.name} is open${editorFile.dirty ? " (unsaved changes)" : ""}`
+              : "Open Parquet, Arrow, JSON, JSONL or CSV files and edit them like a spreadsheet."}
+          </span>
+        </span>
+        <span className="shrink-0 text-xs font-semibold" style={{ color: "var(--accent)" }}>
+          {editorFile ? "Continue →" : "Open →"}
+        </span>
+      </button>
 
       <section className="mb-10">
         <h2 className="mb-4 text-sm font-semibold" style={{ color: "var(--text-muted)" }}>

@@ -36,6 +36,8 @@ echo "==> [1/5] Building frontend"
 
 echo "==> [2/5] Setting up the build toolchain (PyInstaller)"
 if [ ! -d build/.build-venv ]; then
+  # Must be the same Python minor version as the runtime below (3.12): the
+  # app's server borrows pandas/pyarrow from that runtime.
   uv venv build/.build-venv --python 3.12
 fi
 BUILD_PY="build/.build-venv/bin/python"
@@ -51,6 +53,9 @@ if [ -z "$RUNTIME_SRC" ]; then
   exit 1
 fi
 uv pip install --python "$RUNTIME_SRC/bin/python3" --break-system-packages -r scripts_requirements.txt
+# Standard-library modules the Data Editor's pandas/pyarrow need; the app's
+# server bundles these (it borrows pandas/pyarrow themselves from this runtime).
+"$RUNTIME_SRC/bin/python3" build/stdlib_for_editor.py > build/.editor-stdlib.txt
 
 echo "==> [4/5] Running PyInstaller"
 # Version shown in the macOS app's Info: CI passes it from the git tag; a

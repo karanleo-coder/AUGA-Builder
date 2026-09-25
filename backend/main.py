@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import sys
 import time
+import uuid
 
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -15,10 +18,28 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 import importer
-from appdirs import FRONTEND_DIST, PACKAGES_DIR, SCRIPTS_DIR
+from appdirs import FILES_DIR, FRONTEND_DIST, PACKAGES_DIR, SCRIPTS_DIR
 from models import InputPayload, RunDetail, RunSummary, ScriptCreate, ScriptInfo, ScriptUpdate
 from process_manager import manager, pip_install_command
 from registry import registry
+
+class _LazyModule:
+    """Imports a module on first use. The Data Editor pulls in pandas and
+    pyarrow, which take a moment to load, so the app starts without them."""
+
+    def __init__(self, name: str) -> None:
+        self._name, self._module = name, None
+
+    def __getattr__(self, attr: str):
+        if self._module is None:
+            import importlib
+
+            self._module = importlib.import_module(self._name)
+        return getattr(self._module, attr)
+
+
+data_editor = _LazyModule("data_editor")
+data_clean = _LazyModule("data_clean")
 
 app = FastAPI(title="AUGA-Builder API")
 importer.cleanup_stale_staging()  # half-finished uploads from a previous run
@@ -221,6 +242,214 @@ async def import_pick(payload: dict):
     return response
 
 
+@app.post("/api/pick-path")
+async def pick_path(payload: dict):
+    """Browse button on a script's file question: the OS's own picker."""
+    if request_dialog is None:
+        raise HTTPException(400, "native file dialogs aren't available here")
+    kind = payload.get("kind") if payload.get("kind") in ("open", "save", "folder") else "open"
+    extensions = [str(e) for e in (payload.get("extensions") or [])][:20]
+    picked = await run_in_threadpool(request_dialog, kind, extensions, payload.get("default_name"))
+    return {"path": picked} if picked else {"cancelled": True}
+
+
+# ---------------- Data Editor (spreadsheet for Parquet/Arrow/JSON/JSONL/CSV) ----------------
+
+def _editor_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except data_editor.EditorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/data/formats")
+def data_formats():
+    return {
+        "formats": [{"id": k, "label": v["label"], "ext": v["ext"]} for k, v in data_editor.FORMATS.items()],
+        "kinds": [{"id": k, "label": v} for k, v in data_editor.KINDS.items() if k != "other"],
+        "files_dir": str(FILES_DIR),
+    }
+
+
+@app.get("/api/data/recent")
+def data_recent():
+    return data_editor.recent_files()
+
+
+@app.post("/api/data/open")
+def data_open(payload: dict):
+    """Open by path, or (app window) with the OS's own file picker."""
+    path = payload.get("path")
+    if not path:
+        if request_dialog is None:
+            raise HTTPException(400, "choose a file to upload instead")
+        path = request_dialog("open", data_editor.all_extensions(), None)
+        if not path:
+            return {"cancelled": True}
+    return _editor_call(data_editor.editor.open_path, Path(path)).meta()
+
+
+@app.put("/api/data/upload")
+async def data_upload(name: str, request: Request):
+    """Browser mode: the page uploads the file's bytes; it's opened as a copy."""
+    safe = importer.safe_folder_name(Path(name).stem) + Path(name).suffix.lower()
+    tmp_dir = importer.STAGING_DIR / f"editor-{uuid.uuid4().hex}"
+    tmp_dir.mkdir(parents=True)
+    tmp = tmp_dir / safe
+    try:
+        with open(tmp, "wb") as out:
+            async for chunk in request.stream():
+                out.write(chunk)
+        session = await run_in_threadpool(
+            _editor_call, data_editor.editor.open_path, tmp, source_name=Path(name).name, keep_path=False)
+        return session.meta()
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.post("/api/data/new")
+def data_new(payload: dict):
+    return _editor_call(data_editor.editor.new, payload.get("columns") or [], payload.get("format", "parquet")).meta()
+
+
+@app.get("/api/data/{sid}")
+def data_meta(sid: str):
+    return _editor_call(data_editor.editor.get, sid).meta()
+
+
+@app.get("/api/data/{sid}/rows")
+def data_rows(sid: str, offset: int = 0, limit: int = 200):
+    s = _editor_call(data_editor.editor.get, sid)
+    limit = max(1, min(limit, 1000))
+    return {"offset": offset, "rows": s.rows(max(0, offset), limit), "total_rows": len(s.df)}
+
+
+@app.post("/api/data/{sid}/edit")
+def data_edit(sid: str, payload: dict):
+    s = _editor_call(data_editor.editor.get, sid)
+    op = payload.get("op")
+    result: dict = {}
+    with s.lock:
+        try:
+            if op == "set":  # one or many cells (a paste): {"cells": [[row, col, "text"], ...]}
+                cells = [(int(r), int(c), v) for r, c, v in payload.get("cells", [])]
+                grow = max((r for r, _, _ in cells), default=-1) + 1 - len(s.df)
+                if grow > 0 and payload.get("grow"):  # pasting past the last row adds rows
+                    s.insert_rows(len(s.df), grow)
+                cells = [(r, c, v) for r, c, v in cells if 0 <= r < len(s.df) and 0 <= c < len(s.columns)]
+                changed, errors = s.set_cells(cells)
+                result = {"changed": changed, "errors": errors[:20], "error_count": len(errors),
+                          "rows": {str(r): s.rows(r, 1)[0] for r in sorted({r for r, _, _ in cells})[:500]}}
+            elif op == "insert_rows":
+                s.insert_rows(int(payload.get("at", len(s.df))), int(payload.get("count", 1)))
+            elif op == "delete_rows":
+                s.delete_rows([int(r) for r in payload.get("rows", [])])
+            elif op == "add_column":
+                s.add_column(str(payload.get("name", "")), str(payload.get("kind", "text")), payload.get("at"))
+            elif op == "rename_column":
+                s.rename_column(int(payload["col"]), str(payload.get("name", "")))
+            elif op == "delete_column":
+                s.delete_column(int(payload["col"]))
+            elif op == "change_kind":
+                result = {"failed": s.change_kind(int(payload["col"]), str(payload["kind"]),
+                                                  bool(payload.get("dry_run")))}
+            elif op == "sort":
+                s.sort(int(payload["col"]), bool(payload.get("ascending", True)))
+            elif op == "replace_text":  # Clean data > Find by keyword: replace or empty the found text
+                changed, errors = data_clean.replace_text(s, payload.get("selection") or {}, payload.get("replacement"))
+                result = {"changed": changed, "errors": errors[:20], "error_count": len(errors)}
+            elif op == "remove_found":  # Clean data: remove the ticked rows of a search
+                result = {"removed": data_clean.remove_rows(s, payload.get("selection") or {})}
+            elif op == "undo":
+                s.undo_last()
+            else:
+                raise HTTPException(400, "unknown edit")
+        except data_editor.EditorError as e:
+            raise HTTPException(400, str(e))
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(400, "bad edit request")
+    return {"meta": s.meta(), **result}
+
+
+@app.post("/api/data/{sid}/clean")
+def data_clean_find(sid: str, payload: dict):
+    """Clean data tools that only look: duplicate rows, rows with a keyword."""
+    s = _editor_call(data_editor.editor.get, sid)
+    tool = payload.get("tool")
+    offset = max(0, int(payload.get("offset", 0)))
+    with s.lock:
+        try:
+            if tool == "duplicates":
+                return data_clean.find_duplicates(s, payload.get("cols"), bool(payload.get("ignore_case", True)),
+                                                  offset=offset)
+            if tool == "find":
+                return data_clean.find_text(s, str(payload.get("text", "")), payload.get("cols"),
+                                            str(payload.get("match", "contains")),
+                                            bool(payload.get("case_sensitive")), offset=offset)
+        except data_editor.EditorError as e:
+            raise HTTPException(400, str(e))
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(400, "bad request")
+    raise HTTPException(400, "unknown tool")
+
+
+@app.post("/api/data/{sid}/save")
+def data_save(sid: str, payload: dict):
+    """Save in the chosen format. "pick": choose where (native Save dialog in
+    the app window); "filename": browser mode's Save as (into FILES_DIR)."""
+    s = _editor_call(data_editor.editor.get, sid)
+    fmt = payload.get("format") or s.format
+    if fmt not in data_editor.FORMATS:
+        raise HTTPException(400, "unknown format")
+    path: Optional[Path] = Path(payload["path"]) if payload.get("path") else None
+    if payload.get("filename"):
+        path = FILES_DIR / importer.safe_folder_name(Path(str(payload["filename"])).name)
+    elif payload.get("pick"):
+        if request_dialog is None:
+            raise HTTPException(400, "type a file name instead")
+        ext = data_editor.FORMATS[fmt]["ext"]
+        base = (s.path.stem if s.path else Path(s.source_name or "untitled").stem) + ext
+        picked = request_dialog("save", [ext], base)
+        if not picked:
+            return {"cancelled": True}
+        path, payload["overwrite"] = Path(picked), True  # the OS dialog already asked
+    try:
+        s = data_editor.editor.save(sid, fmt, path, bool(payload.get("overwrite")))
+    except FileExistsError as e:
+        return JSONResponse({"detail": f"{Path(str(e)).name} already exists. Replace it?",
+                             "exists": str(e)}, status_code=409)
+    except data_editor.EditorError as e:
+        raise HTTPException(400, str(e))
+    return s.meta()
+
+
+@app.delete("/api/data/{sid}")
+def data_close(sid: str):
+    data_editor.editor.close(sid)
+    return {"ok": True}
+
+
+@app.post("/api/reveal")
+def reveal(payload: dict):
+    """Show a file in Finder / Explorer / the file manager."""
+    import os
+    import subprocess
+
+    path = Path(str(payload.get("path", ""))).expanduser()
+    if not path.exists():
+        raise HTTPException(404, "that file doesn't exist anymore")
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(path)])
+        elif sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path.parent)])
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    return {"ok": True}
+
+
 @app.post("/api/import/path")
 async def import_from_path(payload: dict):
     """Import a folder/.zip/.py by path (after a native pick)."""
@@ -361,6 +590,7 @@ request_shutdown = None  # closes the app window / stops the server
 request_focus = None  # brings the app window back to the front
 ui_mode = None  # "window" | "app-window" | "browser" | "none"
 request_pick = None  # (kind) -> path | None: the OS's native folder/file picker
+request_dialog = None  # (kind, extensions, default_name) -> path | None: for script questions
 # Set by launcher.py before the server starts, so the page never sees a
 # half-started app as "dev mode" (the window hooks above arrive a moment later).
 launched_as_app = False

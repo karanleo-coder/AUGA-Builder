@@ -61,7 +61,21 @@ hiddenimports = [
     "h11",
     "pydantic",
     "pydantic_core",
+    "data_editor",  # imported lazily (see main.py), so name it here
+    "data_clean",
 ]
+
+# The Data Editor's pandas/pyarrow come from the bundled script runtime at
+# run time (appdirs.use_runtime_packages), never from this bundle. The
+# standard-library modules they need must be in this bundle, though; the
+# build writes that list (build/stdlib_for_editor.py).
+BORROWED_FROM_RUNTIME = ["pandas", "pyarrow", "numpy"]
+_stdlib_list = os.path.join(SPEC_DIR, ".editor-stdlib.txt")
+if os.path.exists(_stdlib_list):
+    with open(_stdlib_list, encoding="utf-8", errors="ignore") as f:
+        hiddenimports += [line.strip() for line in f if line.strip() and not line.startswith("_sysconfigdata")]
+else:
+    print("WARNING: build/.editor-stdlib.txt missing; the Data Editor may not work in this build")
 
 # Native window backend (pywebview): only the one this OS uses.
 UNUSED_WEBVIEW = ["webview.platforms.gtk", "webview.platforms.qt",
@@ -85,7 +99,7 @@ a = Analysis(
     datas=[],
     hiddenimports=hiddenimports,
     hookspath=[],
-    excludes=excludes,
+    excludes=excludes + BORROWED_FROM_RUNTIME,
     noarchive=False,
 )
 

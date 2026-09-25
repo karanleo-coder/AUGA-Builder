@@ -60,6 +60,9 @@ DATA_DIR = APP_ROOT / "data"
 # Install a package). Kept outside the app, so they survive updates and never
 # touch the app's signed bundle; added to PYTHONPATH for every script run.
 PACKAGES_DIR = (APP_ROOT / "packages") if FROZEN else (DATA_DIR / "packages")
+# Where the Data Editor saves files by default (e.g. in browser mode, where
+# there's no native Save dialog).
+FILES_DIR = (APP_ROOT / "files") if FROZEN else (DATA_DIR / "files")
 # In dev mode this is Vite's own build output; in a packaged build it's the
 # bundle folder PyInstaller copies that same output into (see build/*.spec).
 FRONTEND_DIST = (BUNDLE_DIR / "frontend_dist") if FROZEN else (APP_ROOT / "frontend" / "dist")
@@ -81,3 +84,27 @@ def bundled_python() -> str | None:
             if candidate.exists():
                 return str(candidate)
     return None
+
+
+def use_runtime_packages() -> str | None:
+    """Packaged app only. The app's own server is a slim bundle, but the Data
+    Editor needs pandas and pyarrow, which the bundled script runtime already
+    has. Both are the same Python minor version (the build pins 3.12 for
+    both), so the server borrows them instead of shipping a second copy. Only site-packages is borrowed: the
+    standard-library modules pandas/pyarrow need are bundled into the app
+    (see build/stdlib_for_editor.py). Appended to sys.path, so the app's own
+    bundled modules always win. Returns the site-packages path, or None."""
+    if not FROZEN:
+        return None
+    major, minor = sys.version_info[:2]
+    if WINDOWS:
+        if not (PYTHON_RUNTIME_DIR / f"python{major}{minor}.dll").exists():
+            return None  # a different Python version: don't mix them
+        site = PYTHON_RUNTIME_DIR / "Lib" / "site-packages"
+    else:
+        site = PYTHON_RUNTIME_DIR / "lib" / f"python{major}.{minor}" / "site-packages"
+    if not site.is_dir():
+        return None
+    if str(site) not in sys.path:
+        sys.path.append(str(site))
+    return str(site)

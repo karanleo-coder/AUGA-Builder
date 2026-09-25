@@ -27,7 +27,7 @@ JUNK_DIRS = {
     "__MACOSX", "site-packages",
 }
 # In dev mode the whole repo is scanned, so skip the app's own folders too.
-IGNORE_DIRS = JUNK_DIRS if FROZEN else JUNK_DIRS | {"data", "backend", "frontend", "dist", "build", "assets"}
+IGNORE_DIRS = JUNK_DIRS if FROZEN else JUNK_DIRS | {"data", "backend", "frontend", "dist", "build", "assets", "script-helpers"}
 
 # Files that are never something you'd "run".
 NOT_ENTRY_FILES = {"__init__.py", "setup.py", "conftest.py"}
@@ -98,6 +98,27 @@ def _guess_description(py_path: Path) -> str:
         return ""
 
 
+ORIGINAL_SEEDS = ("github_data_downloader", "github_data_hunter", "pretaring datasets maker")
+# (Parquet Studio was an example once; the built-in Data Editor replaced it.)
+
+
+def _folder_meta(py_path: Path) -> dict:
+    """Optional auga.json next to a script: {"name", "description", "icon",
+    "color"} for how it looks in the app. If a folder has several scripts,
+    only a single-script folder's name applies (they'd all share it)."""
+    meta_file = py_path.parent / "auga.json"
+    try:
+        raw = json.loads(meta_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    meta = {k: str(raw[k]) for k in ("name", "description", "icon", "color") if isinstance(raw.get(k), str)}
+    if "name" in meta and len(find_entry_points(py_path.parent)) > 1:
+        del meta["name"]
+    return meta
+
+
 def _pretty_name(py_path: Path) -> str:
     # "my_tool/main.py" reads better as "My Tool" than "Main".
     base = py_path.parent.name if py_path.stem in GENERIC_ENTRY_NAMES else py_path.stem
@@ -114,26 +135,37 @@ class Registry:
         self._auto_discover()
 
     def _seed_scripts_dir(self) -> None:
-        """Packaged mode only: on first run, create the `scripts` folder next
-        to the executable and copy the bundled demo scripts into it, so
-        someone who just downloaded the app has something to click Run on."""
-        if not FROZEN:
+        """Packaged mode only: copy the bundled example scripts into the
+        scripts folder. Each example is offered once (listed in
+        data/seeded.json), so new examples in an update show up, but ones the
+        user deleted don't come back."""
+        if not FROZEN or not SEED_SCRIPTS_DIR.exists():
             return
         SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        already_has_scripts = any(SCRIPTS_DIR.rglob("*.py"))
-        if already_has_scripts or not SEED_SCRIPTS_DIR.exists():
-            return
-        for item in SEED_SCRIPTS_DIR.iterdir():
-            dest = SCRIPTS_DIR / item.name
-            if dest.exists():
+        record = DATA_DIR / "seeded.json"
+        try:
+            seeded = set(json.loads(record.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            # Installs from before this record existed got the first
+            # examples already; only newer examples are new to them.
+            seeded = set(ORIGINAL_SEEDS) if any(SCRIPTS_DIR.iterdir()) else set()
+        for item in sorted(SEED_SCRIPTS_DIR.iterdir()):
+            if item.name in seeded:
                 continue
-            try:
-                if item.is_dir():
-                    shutil.copytree(item, dest)
-                else:
-                    shutil.copy2(item, dest)
-            except OSError:
-                pass
+            dest = SCRIPTS_DIR / item.name
+            if not dest.exists():
+                try:
+                    if item.is_dir():
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+                except OSError:
+                    continue
+            seeded.add(item.name)
+        try:
+            record.write_text(json.dumps(sorted(seeded), indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
     # ---------- persistence ----------
 
@@ -154,14 +186,15 @@ class Registry:
 
     def _new_info(self, py_path: Path) -> ScriptInfo:
         idx = len(self._scripts)
+        meta = _folder_meta(py_path)
         return ScriptInfo(
             id=str(uuid.uuid4()),
-            name=_pretty_name(py_path),
-            description=_guess_description(py_path),
+            name=meta.get("name") or _pretty_name(py_path),
+            description=meta.get("description") or _guess_description(py_path),
             path=str(py_path),
             folder=py_path.parent.name,
-            icon=DEFAULT_ICONS[idx % len(DEFAULT_ICONS)],
-            color=DEFAULT_COLORS[idx % len(DEFAULT_COLORS)],
+            icon=meta.get("icon") or DEFAULT_ICONS[idx % len(DEFAULT_ICONS)],
+            color=meta.get("color") or DEFAULT_COLORS[idx % len(DEFAULT_COLORS)],
             created_at=time.time(),
         )
 
@@ -205,7 +238,7 @@ class Registry:
             infos = self._register_paths(entries)
             # A project with a single script is named after the project
             # ("Currency Converter"), not its file ("Convert").
-            if len(infos) == 1 and infos[0].path not in known:
+            if len(infos) == 1 and infos[0].path not in known and not _folder_meta(Path(infos[0].path)).get("name"):
                 pretty = folder.name.replace("_", " ").replace("-", " ").strip().title()
                 if pretty:
                     infos[0] = infos[0].model_copy(update={"name": pretty})

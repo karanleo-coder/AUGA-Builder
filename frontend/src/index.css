@@ -137,3 +137,157 @@ body {
 .animate-blink {
   animation: blink-caret 1s step-end infinite;
 }
+
+/* ---- Data Editor grid (react-data-grid), themed with the app's colours ---- */
+.auga-grid {
+  --rdg-color: var(--text);
+  --rdg-border-color: var(--border);
+  --rdg-background-color: var(--bg-elevated);
+  --rdg-header-background-color: var(--bg-inset);
+  --rdg-header-draggable-background-color: var(--bg-inset);
+  --rdg-row-hover-background-color: color-mix(in srgb, var(--accent) 5%, var(--bg-elevated));
+  --rdg-row-selected-background-color: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  --rdg-row-selected-hover-background-color: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated));
+  --rdg-selection-color: var(--accent);
+  --rdg-font-size: 13px;
+  border: 0;
+  block-size: 100%;
+  color-scheme: inherit;
+  font-family: inherit;
+}
+.auga-grid .rdg-cell {
+  padding-inline: 10px;
+}
+.auga-grid .auga-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.auga-grid .auga-rownum {
+  background: var(--bg-inset);
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  user-select: none;
+}
+.auga-grid .auga-row-selected {
+  background-color: var(--rdg-row-selected-background-color);
+}
+.auga-grid .auga-row-selected .auga-rownum {
+  color: var(--accent);
+  font-weight: 600;
+}
+.auga-grid .auga-kind {
+  margin-top: 2px;
+  font-size: calc(10.5px * var(--auga-zoom, 1));
+  font-weight: 500;
+  color: var(--text-faint);
+}
+.auga-grid .rdg-editor-container input,
+.auga-grid .rdg-editor-container select {
+  font: inherit;
+}
+
+/* cells: one line with "…", or wrapped over several lines in Tall/Expanded rows */
+.auga-grid .auga-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auga-grid.auga-wrap .rdg-cell {
+  display: flex;
+  align-items: center;
+  line-height: 1.35;
+}
+.auga-grid.auga-wrap .auga-num,
+.auga-grid.auga-wrap .auga-rownum {
+  justify-content: flex-end;
+}
+.auga-grid.auga-wrap .auga-cell {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--auga-lines, 2);
+}
+.auga-grid.auga-wrap .auga-num .auga-cell {
+  text-align: right;
+}
+.auga-grid.auga-full .auga-cell {
+  display: block;
+  -webkit-line-clamp: none;
+}
+
+/* the floating row window */
+.auga-float {
+  box-shadow:
+    0 28px 70px -18px rgb(0 0 0 / 0.42),
+    0 10px 24px -10px rgb(0 0 0 / 0.22),
+    0 0 0 1px var(--border);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  animation: float-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.auga-float:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 44px 100px -20px rgb(0 0 0 / 0.5),
+    0 16px 34px -12px rgb(0 0 0 / 0.28),
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+.auga-row-table th,
+.auga-row-table td {
+  border-right: 1px solid var(--border);
+  vertical-align: top;
+}
+.auga-grid.auga-full .auga-cell {
+  white-space: pre-wrap; /* line breaks inside a value show as new lines */
+}
+
+/* Clean data: searching animations */
+.auga-progress {
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.auga-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 999px;
+  animation: auga-progress 1.1s ease-in-out infinite;
+}
+@keyframes auga-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.auga-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-inset) 0%,
+    color-mix(in srgb, var(--accent) 7%, var(--bg-inset)) 45%,
+    var(--bg-inset) 90%
+  );
+  background-size: 250% 100%;
+  animation: auga-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes auga-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}

@@ -20,7 +20,7 @@ export interface LogLine {
   seq: number;
   ts: number;
   text: string;
-  stream: "out" | "err" | "system" | "in";
+  stream: "out" | "err" | "system" | "in" | "ui";
 }
 
 export interface RunSummary {
@@ -55,5 +55,6 @@ export type StreamEvent =
   | { type: "prompt"; text: string; line: LogLine }
   | { type: "status"; status: RunStatus; exit_code?: number | null }
   | { type: "input"; line: LogLine; status: RunStatus }
+  | { type: "progress"; value: number | null }
   | { type: "done" }
   | { type: "error"; message: string };

@@ -12,6 +12,7 @@ only the last MAX_FINISHED_RUNS completed runs are retained in memory.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -31,6 +32,8 @@ MAX_LOG_LINES = 2000
 MAX_FINISHED_RUNS = 50
 PROMPT_IDLE_SECONDS = 0.35
 READ_CHUNK = 4096
+UI_PREFIX = "@@auga:"
+MAX_UI_LINE = 2_000_000  # a table bigger than this is replaced by a notice
 
 PYTHON_BIN = bundled_python() or sys.executable
 SECRET_HINT = re.compile(r"password|token|secret|hidden|api[\s_-]?key", re.IGNORECASE)
@@ -178,6 +181,8 @@ class ProcessManager:
         env["PYTHONIOENCODING"] = "utf-8"
         env["FORCE_COLOR"] = "0"
         env["NO_COLOR"] = "1"
+        # Lets scripts using auga_ui.py know they can show tables, buttons...
+        env["AUGA_BUILDER"] = "1"
         env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
         # Packages the user installed from Settings are importable everywhere.
         env["PYTHONPATH"] = os.pathsep.join(
@@ -231,6 +236,8 @@ class ProcessManager:
         for raw in lines:
             text = raw.decode("utf-8", errors="replace").rstrip("\r")
             run.awaiting_prompt = None
+            if text.startswith(UI_PREFIX) and self._handle_ui(run, text[len(UI_PREFIX):]):
+                continue
             line = run.append_line(text, stream="out")
             run.broadcast({"type": "log", "line": line.model_dump()})
 
@@ -242,6 +249,30 @@ class ProcessManager:
             run.idle_handle.cancel()
         if run._partial:
             run.idle_handle = loop.call_later(PROMPT_IDLE_SECONDS, self._check_prompt, run)
+
+    def _handle_ui(self, run: Run, payload: str) -> bool:
+        """A line from auga_ui ("@@auga:{json}"): a table, message, choice
+        buttons, a file question or exact progress. Returns False if it
+        isn't valid, so it's shown as plain text instead."""
+        try:
+            data = json.loads(payload)
+            kind = data["type"]
+        except (ValueError, KeyError, TypeError):
+            return False
+        if kind == "progress":
+            value = data.get("value")
+            try:
+                run.progress = None if value is None else max(0.0, min(100.0, float(value)))
+            except (TypeError, ValueError):
+                return True
+            run.broadcast({"type": "progress", "value": run.progress})
+            return True
+        if len(payload) > MAX_UI_LINE:
+            payload = json.dumps({"type": "message", "kind": "warning",
+                                  "text": "This table was too large to show; show fewer rows at a time."})
+        line = run.append_line(payload, stream="ui")
+        run.broadcast({"type": "log", "line": line.model_dump()})
+        return True
 
     def _check_prompt(self, run: Run) -> None:
         if not run._partial or run.process is None or run.process.poll() is not None:

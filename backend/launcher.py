@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -182,8 +183,10 @@ def _run_native_window(url: str, app_module) -> None:
     def on_closing():
         if state["closing_for_real"]:
             return True
-        if _active_run_count():
-            # Scripts are still running: let the app's own UI ask first.
+        editor_mod = sys.modules.get("data_editor")  # only loaded if the editor was used
+        unsaved = bool(editor_mod and editor_mod.editor.any_dirty())
+        if _active_run_count() or unsaved:
+            # Scripts running or unsaved edits: let the app's own UI ask first.
             # (A native dialog can't be opened from inside this handler.)
             threading.Thread(
                 target=lambda: window.evaluate_js(
@@ -216,7 +219,23 @@ def _run_native_window(url: str, app_module) -> None:
             )
         return result[0] if result else None
 
+    def dialog(kind: str, extensions: list[str], default_name: str | None):
+        """Native picker for a script's file question (auga_ui.ask_path)."""
+        exts = [e for e in extensions if re.fullmatch(r"\.\w+", e)]
+        types = (f"Matching files ({';'.join('*' + e for e in exts)})", "All files (*.*)") if exts else ()
+        if kind == "folder":
+            result = window.create_file_dialog(webview.FileDialog.FOLDER)
+        elif kind == "save":
+            result = window.create_file_dialog(webview.FileDialog.SAVE,
+                                               save_filename=default_name or "", file_types=types)
+        else:
+            result = window.create_file_dialog(webview.FileDialog.OPEN, file_types=types)
+        if not result:
+            return None
+        return result if isinstance(result, str) else result[0]
+
     window.events.closing += on_closing
+    app_module.request_dialog = dialog
     app_module.request_shutdown = close_for_real
     app_module.request_focus = bring_to_front
     app_module.request_pick = pick
@@ -282,13 +301,15 @@ def _run_app_window(url: str, app_module) -> bool:
         "--hide-crash-restore-bubble",
     ]
     started = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    launch = lambda: subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: E731
+    current = {"proc": launch()}
     we_closed_it = threading.Event()
 
     def close_app_window():
         # Chrome treats the first SIGTERM as "please close" (which can stall),
         # and a second one as "exit now"; a hard kill is the last resort.
         we_closed_it.set()
+        proc = current["proc"]
         logging.info("Closing app window (pid %s)", proc.pid)
         for send, grace in ((proc.terminate, 3), (proc.terminate, 3), (proc.kill, 3)):
             if proc.poll() is not None:
@@ -302,20 +323,30 @@ def _run_app_window(url: str, app_module) -> bool:
 
     app_module.request_shutdown = close_app_window
     # Running the same command again opens/raises a window in that process.
-    app_module.request_focus = lambda: subprocess.Popen(
-        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+    app_module.request_focus = launch
     app_module.ui_mode = "app-window"
     logging.info("Opened app window with %s", browser)
 
-    code = proc.wait()
-    # A browser that dies right away (and not because we closed it) couldn't
-    # start: fall back to a normal browser tab instead of quitting the app.
-    if not we_closed_it.is_set() and time.time() - started < 4 and code != 0:
-        logging.warning("App window exited immediately (code %s); falling back", code)
-        app_module.request_shutdown = app_module.request_focus = None
-        return False
-    return True
+    reopened = 0
+    while True:
+        code = current["proc"].wait()
+        if we_closed_it.is_set() or code == 0:
+            logging.info("App window closed (code %s)", code)
+            return True  # closed by the user or by Quit: the app quits
+        # A browser that dies right away couldn't start at all: fall back
+        # to a normal browser tab instead of quitting the app.
+        if reopened == 0 and time.time() - started < 4:
+            logging.warning("App window exited immediately (code %s); falling back", code)
+            app_module.request_shutdown = app_module.request_focus = None
+            return False
+        # It crashed or was killed (not closed normally): running scripts
+        # would die with the app, so bring the window back instead.
+        reopened += 1
+        if reopened > 3:
+            logging.error("App window keeps exiting (code %s); quitting", code)
+            return True
+        logging.warning("App window exited unexpectedly (code %s); reopening it", code)
+        current["proc"] = launch()
 
 
 # -------------------------------------------------------------------- main
@@ -344,6 +375,12 @@ def main() -> None:
             if mode != "none":
                 webbrowser.open(existing)
         return
+
+    from appdirs import use_runtime_packages
+
+    borrowed = use_runtime_packages()
+    if FROZEN:
+        logging.info("Data Editor packages from: %s", borrowed or "NOT FOUND (Data Editor unavailable)")
 
     import main as app_module  # direct (static) import so PyInstaller bundles
     # main.py and everything it imports automatically — a string-based

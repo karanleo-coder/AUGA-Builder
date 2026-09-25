@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { Menu, Moon, Sun } from "./icons";
 import { Dashboard } from "./pages/Dashboard";
+import { DataEditor } from "./pages/DataEditor";
 import { RunPage } from "./pages/RunPage";
 import { ScriptPage } from "./pages/ScriptPage";
 import { Settings } from "./pages/Settings";
@@ -58,8 +59,11 @@ export default function App() {
       const active = Object.values(runs).filter(
         (r) => r.status === "running" || r.status === "awaiting_input",
       ).length;
-      const msg = `Quit AUGA-Builder? ${active} running script${active === 1 ? "" : "s"} will be stopped.`;
-      if (confirm(msg)) quitApp();
+      const unsaved = useStore.getState().editorFile?.dirty ? useStore.getState().editorFile?.name : null;
+      const parts = [];
+      if (active) parts.push(`${active} running script${active === 1 ? "" : "s"} will be stopped.`);
+      if (unsaved) parts.push(`Unsaved changes to ${unsaved} will be lost.`);
+      if (confirm(`Quit AUGA-Builder? ${parts.join(" ")}`)) quitApp();
     };
     return () => {
       delete w.__augaConfirmQuit;
@@ -123,6 +127,7 @@ export default function App() {
             <Route path="/scripts/:scriptId" element={<ScriptPage />} />
             <Route path="/runs/:runId" element={<RunPage />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/editor" element={<DataEditor />} />
           </Routes>
         </div>
       </div>

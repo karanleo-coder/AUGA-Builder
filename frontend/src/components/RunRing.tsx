@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { swatchFor } from "../colors";
 import { Check, RefreshCw, scriptIcon, X } from "../icons";
@@ -23,6 +25,8 @@ const STATUS_LABEL: Record<RunSummary["status"], string> = {
 
 export function RunRing({ run, size = 84 }: { run: RunSummary; size?: number }) {
   const navigate = useNavigate();
+  const ref = useRef<HTMLButtonElement>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; below: boolean } | null>(null);
   const swatch = swatchFor(run.color);
   const Icon = scriptIcon(run.icon);
   const stroke = Math.max(3, Math.round(size * 0.055));
@@ -36,10 +40,42 @@ export function RunRing({ run, size = 84 }: { run: RunSummary; size?: number }) 
   const ringColor =
     run.status === "failed" ? "#fb7185" : run.status === "killed" ? "#8a8a94" : swatch.solid;
 
+  // The hover card floats in its own layer (a portal), placed below the ring
+  // when there's room and above it otherwise, so it never gets clipped and
+  // doesn't end up stuck on top of the cards around it.
+  function showTip() {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 240;
+    const height = 96;
+    const below = r.bottom + 8 + height < window.innerHeight;
+    setTip({
+      x: Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8)),
+      y: below ? r.bottom + 6 : r.top - 6,
+      below,
+    });
+  }
+
+  useEffect(() => {
+    if (!tip) return;
+    const hide = () => setTip(null);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [tip]);
+
   return (
     <button
+      ref={ref}
       onClick={() => navigate(`/runs/${run.id}`)}
-      className="group relative flex flex-col items-center gap-2 rounded-2xl p-2 transition-transform hover:scale-[1.04] active:scale-[0.98] cursor-pointer"
+      onMouseEnter={showTip}
+      onMouseLeave={() => setTip(null)}
+      onFocus={showTip}
+      onBlur={() => setTip(null)}
+      className="relative flex flex-col items-center gap-2 rounded-2xl p-2 transition-transform hover:scale-[1.04] active:scale-[0.98] cursor-pointer"
       style={{ width: size + 24 }}
     >
       <div className="relative" style={{ width: size, height: size }}>
@@ -128,29 +164,37 @@ export function RunRing({ run, size = 84 }: { run: RunSummary; size?: number }) 
         {run.script_name}
       </span>
 
-      {/* Hover tooltip */}
-      <div
-        className="pointer-events-none absolute -top-2 left-1/2 z-20 w-52 -translate-x-1/2 -translate-y-full rounded-xl border p-3 text-left opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
-        style={{ background: "var(--bg-elevated)", borderColor: "var(--border)" }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
-            {run.script_name}
-          </span>
-          <span
-            className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-            style={{ background: swatch.soft, color: swatch.text }}
+      {tip &&
+        createPortal(
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-[60] w-60 animate-fade-in rounded-xl p-3 text-left shadow-2xl"
+            style={{
+              left: tip.x,
+              top: tip.y,
+              transform: tip.below ? undefined : "translateY(-100%)",
+              background: "color-mix(in srgb, var(--text) 94%, transparent)",
+              color: "var(--bg-elevated)",
+            }}
           >
-            {STATUS_LABEL[run.status]}
-          </span>
-        </div>
-        <p className="mt-1 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-          {run.awaiting_prompt ? `Waiting: ${run.awaiting_prompt}` : run.last_line || "Starting…"}
-        </p>
-        <p className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
-          {elapsed(run)} elapsed{run.progress != null ? ` · ${Math.round(run.progress)}%` : ""}
-        </p>
-      </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-[13px] font-semibold">{run.script_name}</span>
+              <span
+                className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{ background: swatch.solid, color: "#0b0b0f" }}
+              >
+                {STATUS_LABEL[run.status]}
+              </span>
+            </div>
+            <p className="mt-1.5 truncate text-[11.5px] opacity-80">
+              {run.awaiting_prompt ? `Waiting: ${run.awaiting_prompt}` : run.last_line || "Starting…"}
+            </p>
+            <p className="mt-1 text-[10.5px] opacity-60">
+              {elapsed(run)} elapsed{run.progress != null ? ` · ${Math.round(run.progress)}%` : ""} · click to open
+            </p>
+          </div>,
+          document.body,
+        )}
     </button>
   );
 }

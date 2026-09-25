@@ -11,10 +11,12 @@ checks that:
      reaches its first input() prompt,
   3. a folder and a .zip can be added (entry points found, junk skipped,
      path escapes blocked, "replace" works) and their scripts run,
-  4. requests from other websites are refused,
-  5. launching the app a second time brings the existing window back
+  4. a script using auga_ui.py gets tables, buttons and file questions,
+  5. the Data Editor edits a file and converts it between all its formats,
+  6. requests from other websites are refused,
+  7. launching the app a second time brings the existing window back
      instead of starting a duplicate,
-  6. Quit closes the window and stops the app.
+  8. Quit closes the window and stops the app.
 On failure it prints the app's launcher.log.
 """
 from __future__ import annotations
@@ -111,6 +113,99 @@ def check_imports() -> None:
     print("ok  imported a folder with a package inside and ran it")
 
 
+def check_ui_helper(workdir: Path) -> None:
+    """A script using script-helpers/auga_ui.py shows a message, a table,
+    choice buttons and a file question in the app (not plain text), and its
+    answers arrive like typed input."""
+    helper = (Path(__file__).resolve().parent.parent / "script-helpers" / "auga_ui.py").read_bytes()
+    demo = b"""import os
+import auga_ui as ui
+
+if __name__ == "__main__":
+    ui.message("Hello from a script", kind="success")
+    ui.table([["Silver bar", 1000], ["Silver coin", 31]], columns=["metal", "grams"], title="Vault")
+    ui.progress(50)
+    pick = ui.choose("Which one?", [("bar", "Silver bar"), ("coin", "Silver coin")])
+    path = ui.ask_path("Where to save?", kind="save", extensions=[".txt"], default="out.txt")
+    ui.progress(None)
+    with open(path, "w") as f:
+        f.write(pick)
+    ui.message("Saved " + pick + " to " + os.path.basename(path), kind="success")
+"""
+    uid = upload({"ui_demo/ui_demo.py": demo, "ui_demo/auga_ui.py": helper})
+    res = call("POST", f"/api/import/uploads/{uid}/finish", {}, timeout=30)
+    assert [s["name"] for s in res["scripts"]] == ["Ui Demo"], res["scripts"]  # not the helper module
+    run = call("POST", "/api/runs", {"script_id": res["scripts"][0]["id"]})
+    out = workdir / "picked.txt"
+    last_seq = 0
+    for answer in ["coin", str(out)]:
+        r = wait_for(lambda: (x := call("GET", f"/api/runs/{run['id']}"))["status"] != "running"
+                     and (x["status"] != "awaiting_input" or x["log"][-1]["seq"] > last_seq) and x,
+                     60, f"the demo script to ask (before answering {answer!r})")
+        assert r["status"] == "awaiting_input", r["log"][-10:]
+        last_seq = r["log"][-1]["seq"]
+        call("POST", f"/api/runs/{run['id']}/input", {"text": answer})
+    r = wait_for(lambda: (x := call("GET", f"/api/runs/{run['id']}"))["status"] not in ("running", "awaiting_input") and x,
+                 60, "the demo script to finish")
+    kinds = {json.loads(l["text"])["type"] for l in r["log"] if l["stream"] == "ui"}
+    raw = [l for l in r["log"] if l["stream"] == "out" and l["text"].startswith("@@auga:")]
+    assert r["status"] == "completed", r["log"][-10:]
+    assert {"message", "table", "choices", "ask_path"} <= kinds and not raw, (kinds, raw[:2])
+    assert out.read_text() == "coin"
+    print("ok  a script using auga_ui showed a message, table, buttons and a file question")
+
+
+def check_data_editor(workdir: Path) -> None:
+    """The Data Editor: open a JSON file, edit cells (a bad value is refused),
+    add a row and a column, then save it as every format and reopen each:
+    same rows, and dates stay dates."""
+    src = workdir / "vault.json"
+    src.write_text(json.dumps([
+        {"metal": "Silver bar", "grams": 1000, "minted": "2026-09-20", "pure": True},
+        {"metal": "Silver coin", "grams": 31, "minted": "2026-09-22", "pure": False},
+    ]))
+    meta = call("POST", "/api/data/open", {"path": str(src)}, timeout=30)
+    kinds = {c["name"]: c["kind"] for c in meta["columns"]}
+    assert kinds == {"metal": "text", "grams": "integer", "minted": "date", "pure": "boolean"}, kinds
+    sid = meta["id"]
+    res = call("POST", f"/api/data/{sid}/edit", {"op": "set", "cells": [[0, 0, "Silver ingot"], [1, 1, "abc"]]})
+    assert res["changed"] == 1 and res["error_count"] == 1, res
+    call("POST", f"/api/data/{sid}/edit", {"op": "insert_rows", "at": 2, "count": 1})
+    call("POST", f"/api/data/{sid}/edit", {"op": "set", "cells": [[2, 0, "Silver biscuit"], [2, 1, "100"], [2, 2, "2026-09-26"]]})
+    call("POST", f"/api/data/{sid}/edit", {"op": "add_column", "name": "vault", "kind": "text"})
+    expected = [["Silver ingot", 1000, "2026-09-20", True, None],
+                ["Silver coin", 31, "2026-09-22", False, None],
+                ["Silver biscuit", 100, "2026-09-26", None, None]]
+    for fmt, ext in [("parquet", ".parquet"), ("arrow", ".arrow"), ("jsonl", ".jsonl"), ("csv", ".csv"), ("json", ".json")]:
+        out = workdir / f"converted{ext}"
+        saved = call("POST", f"/api/data/{sid}/save", {"format": fmt, "path": str(out), "overwrite": True}, timeout=30)
+        assert saved["format"] == fmt and out.is_file(), saved
+        back = call("POST", "/api/data/open", {"path": str(out)}, timeout=30)
+        rows = call("GET", f"/api/data/{back['id']}/rows?offset=0&limit=10")["rows"]
+        assert rows == expected, (fmt, rows)
+        assert {c["name"]: c["kind"] for c in back["columns"]}["minted"] == "date", (fmt, back["columns"])
+        call("DELETE", f"/api/data/{back['id']}")
+    print("ok  Data Editor edited a file and converted it to Parquet, Arrow, JSONL, CSV and JSON")
+
+    # Clean data: duplicates keep the most complete copy; keyword search, replace, remove.
+    call("POST", f"/api/data/{sid}/edit", {"op": "insert_rows", "at": 3, "count": 1})
+    call("POST", f"/api/data/{sid}/edit", {"op": "set", "cells": [[3, 0, "silver COIN "], [3, 3, "N/A"]]})
+    dups = call("POST", f"/api/data/{sid}/clean", {"tool": "duplicates", "cols": [0]})
+    assert dups["total_groups"] == 1 and dups["suggested_count"] == 1, dups
+    assert [r["i"] for r in dups["groups"][0]["rows"]] == [1, 3], dups  # the fuller copy first
+    found = call("POST", f"/api/data/{sid}/clean", {"tool": "find", "text": "ingot", "cols": [0]})
+    assert [r["i"] for r in found["rows"]] == [0], found
+    res = call("POST", f"/api/data/{sid}/edit", {"op": "replace_text", "replacement": "bar", "selection": {
+        "tool": "find", "text": "ingot", "cols": [0], "base": "all", "add": [], "skip": []}})
+    assert res["changed"] == 1, res
+    res = call("POST", f"/api/data/{sid}/edit", {"op": "remove_found", "selection": {
+        "tool": "duplicates", "cols": [0], "base": "suggested", "add": [], "skip": []}})
+    assert res["removed"] == 1, res
+    rows = call("GET", f"/api/data/{sid}/rows?offset=0&limit=10")["rows"]
+    assert [r[0] for r in rows] == ["Silver bar", "Silver coin", "Silver biscuit"], rows
+    print("ok  Clean data found a duplicate, found and replaced a keyword, and removed the extra copy")
+
+
 def check_local_only() -> None:
     evil = {"Origin": "https://evil.example", "Content-Type": "application/json"}
     assert status_of("POST", "/api/packages", b'{"packages": "requests"}', evil) == 403
@@ -182,6 +277,8 @@ def main() -> int:
         call("POST", f"/api/runs/{run['id']}/kill")
 
         check_imports()
+        check_ui_helper(home)
+        check_data_editor(home)
         check_local_only()
 
         second = subprocess.run([str(exe)], env=env, timeout=60)

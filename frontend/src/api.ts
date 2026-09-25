@@ -72,6 +72,12 @@ export const api = {
       }>(r),
     ),
   openScriptsFolder: () => fetch("/api/open-scripts-folder", { method: "POST" }).then((r) => j(r)),
+  pickPath: (kind: string, extensions: string[], defaultName: string | null) =>
+    fetch("/api/pick-path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, extensions, default_name: defaultName }),
+    }).then((r) => j<{ path?: string; cancelled?: boolean }>(r)),
   installPackages: (packages: string) =>
     fetch("/api/packages", {
       method: "POST",

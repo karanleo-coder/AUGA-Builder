@@ -87,6 +87,67 @@ The sun/moon button at the top right switches between light and dark mode.
 asks before stopping it. Opening AUGA-Builder again while it's already open
 just brings the window back.
 
+## Data Editor: edit data files like a spreadsheet
+
+Click **Data Editor** in the sidebar (or on the dashboard) to open
+**Parquet, Arrow, JSON, JSONL or CSV** files in a spreadsheet you can edit
+directly.
+
+- **Open** a file with **Open…**, from **Recent files**, or by dropping it
+  on the page. **New** starts an empty file: name your columns and pick
+  their types.
+- **Edit like Excel:** click a cell and type (or press Enter to change what's
+  there), use the arrow keys and Tab to move, **Delete** to clear a cell, and
+  paste a block copied from Excel or Google Sheets. Values are checked
+  against the column type, so a word in a number column is refused.
+  Dates and yes/no columns get a date picker and a Yes/No choice.
+- **Rows and columns:** **+ Row**, **Insert row below**, **Delete row**
+  (click row numbers to pick several; Shift/⌘-click for more),
+  **+ Column**. Click a column's header to sort it, rename it, change its
+  type, insert a column beside it, or delete it.
+- **Pages:** rows are shown 100 at a time (or 50 / 200, under **Rows per
+  page**), so even files with millions of rows stay quick on slower
+  computers. Use **‹ Prev / Next ›**, **« / »** for the first and last page,
+  or type a page number.
+- **Columns fit their text:** each column opens wide enough for its text
+  (very long text wraps or ends in "…"). Drag a column's right edge, or use
+  its header menu for **Fit to contents**, **Wider**, **Narrower** or
+  **Reset width**.
+- **Row height:** **Compact · Normal · Tall · Full text**. **Full text**
+  makes every row as tall as it needs to be, so all of its text is visible.
+- **Expand row:** select a row and click **Expand row** (or double-click
+  its row number). The row opens in a floating window, laid out like the
+  sheet with every value shown in full. **Prev row / Next row** move
+  through the rows without closing it, applying your changes as you go
+  (also ⌘⇧↑ / ⌘⇧↓, or Ctrl+Shift+↑ / ↓). **Apply changes** or
+  ⌘Enter / Ctrl+Enter saves, and Esc or ✕ closes it.
+- **Zoom:** the **− 100% +** buttons, or ⌘+ / ⌘− / ⌘0 (Ctrl on Windows and
+  Linux). Text and columns grow together. Your zoom and row height are
+  remembered.
+- **Undo** with the Undo button or ⌘Z / Ctrl+Z. Save with ⌘S / Ctrl+S.
+- **Clean data** (under **Tools ▾**, or a column's header menu):
+  - **Duplicate rows:** pick the columns that must match, for example just
+    `email` (or leave **All columns** for exact copies). Matching rows are
+    shown side by side, and in each group the row with the least data is
+    already ticked for removal. Empty cells and fillers like "N/A" or
+    "null" count as missing. Change the ticks if you like, then
+    **Remove rows**.
+  - **Find by keyword:** type a word or value to find the rows that
+    contain it, either in every column or only the columns you pick. Then
+    remove those rows, replace the text, or empty the matching cells.
+  - Click a row number in the results to see it in the sheet, then
+    **Back to Clean data**. Every change can be undone with Undo.
+- **Save in any format:** the switch at the top (**Parquet · Arrow · JSON ·
+  JSONL · CSV**) is the format the file is saved in. Pick a different one to
+  **convert**: opening `data.json` and saving with **Parquet** selected
+  writes `data.parquet` next to it. **Save as…** chooses a new name or place.
+
+Parquet and Arrow keep every column's exact type. JSON, JSONL and CSV
+store plain text and numbers; when opening them, the editor recognises
+dates again, so converting JSON to Parquet keeps real dates. Nested values
+(lists, objects) are shown but can't be edited, and are saved back
+unchanged.
+
 ## Adding your own scripts
 
 Go to **Settings → Add scripts** (or **Add scripts** on the dashboard) and
@@ -117,7 +178,7 @@ Everything you add lives in the **AUGA-Builder** folder in your home folder:
 
 You can also copy files in there yourself (**Settings → Open folder**), then
 click **Rescan for new scripts**. In Settings you can rename any script and
-give it an icon and a colour. Three example scripts come with the app so you
+give it an icon and a colour. Some example scripts come with the app so you
 can try it straight away.
 
 **If a script needs another package** (it stops with *"No module named

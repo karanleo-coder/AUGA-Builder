@@ -46,6 +46,9 @@ if (-not $RuntimeSrc) {
 }
 $RuntimePython = Join-Path $RuntimeSrc.FullName "python.exe"
 uv pip install --python $RuntimePython --break-system-packages -r scripts_requirements.txt
+# Standard-library modules the Data Editor's pandas/pyarrow need; the app's
+# server bundles these (it borrows pandas/pyarrow themselves from this runtime).
+& $RuntimePython build\stdlib_for_editor.py | Out-File -Encoding ascii build\.editor-stdlib.txt
 
 Write-Host "==> [4/5] Running PyInstaller"
 Remove-Item -Recurse -Force "dist\$AppName" -ErrorAction SilentlyContinue

@@ -38,7 +38,7 @@ class LogLine(BaseModel):
     seq: int
     ts: float
     text: str
-    stream: Literal["out", "err", "system", "in"] = "out"
+    stream: Literal["out", "err", "system", "in", "ui"] = "out"
 
 
 class RunSummary(BaseModel):

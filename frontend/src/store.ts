@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, connectRunStream } from "./api";
+import type { EditorMeta } from "./dataEditorApi";
 import type { LogLine, RunSummary, ScriptInfo, StreamEvent } from "./types";
 
 const MAX_BUFFERED_LINES = 800;
@@ -20,6 +21,8 @@ interface RunsState {
   scriptsDir: string | null; // where the user drops their .py files
   nativeDialogs: boolean; // app window: OS folder/file pickers available
   stopped: boolean; // user quit the app from the UI
+  editorFile: EditorMeta | null; // the file open in the Data Editor (kept while browsing other pages)
+  setEditorFile: (meta: EditorMeta | null) => void;
 
   loadAppInfo: () => Promise<void>;
   quitApp: () => Promise<void>;
@@ -60,6 +63,10 @@ function applyEvent(
           logs: { ...s.logs, [runId]: nextLog },
           runs: current ? { ...s.runs, [runId]: { ...current, ...patch } } : s.runs,
         };
+      }
+      case "progress": {
+        const current = s.runs[runId];
+        return current ? { runs: { ...s.runs, [runId]: { ...current, progress: event.value } } } : {};
       }
       case "prompt": {
         const current = s.runs[runId];
@@ -107,6 +114,8 @@ export const useStore = create<RunsState>((set, get) => ({
   scriptsDir: null,
   nativeDialogs: false,
   stopped: false,
+  editorFile: null,
+  setEditorFile: (meta) => set({ editorFile: meta }),
 
   loadAppInfo: async () => {
     // In the app, the window finishes attaching a moment after the page
