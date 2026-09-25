@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { swatchFor } from "../colors";
-import { Home, LayoutGrid, scriptIcon, Settings } from "../icons";
+import { Home, LayoutGrid, Power, scriptIcon, Settings } from "../icons";
 import { useStore } from "../store";
 
 function groupByFolder<T extends { folder: string }>(items: T[]): Map<string, T[]> {
@@ -20,6 +20,8 @@ function prettyFolder(name: string): string {
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const scripts = useStore((s) => s.scripts);
   const runs = useStore((s) => s.runs);
+  const showQuit = useStore((s) => s.packaged && s.mode === "browser");
+  const quitApp = useStore((s) => s.quitApp);
   const groups = groupByFolder(scripts);
   const activeCount = Object.values(runs).filter(
     (r) => r.status === "running" || r.status === "awaiting_input",
@@ -36,12 +38,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
     >
       <div className="mb-5 flex items-center gap-2 px-2">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-        >
-          AB
-        </div>
+        <img src="/logo.svg" alt="" className="h-9 w-9 shrink-0" draggable={false} />
         <div>
           <p className="text-sm font-semibold leading-tight">AUGA-Builder</p>
           <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
@@ -117,6 +114,22 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         ))}
       </div>
+
+      {showQuit && (
+        <button
+          onClick={() => {
+            const msg = activeCount
+              ? `Quit AUGA-Builder? ${activeCount} running script${activeCount === 1 ? "" : "s"} will be stopped.`
+              : "Quit AUGA-Builder?";
+            if (confirm(msg)) quitApp();
+          }}
+          className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-inset)]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Power size={17} />
+          Quit AUGA-Builder
+        </button>
+      )}
     </aside>
   );
 }

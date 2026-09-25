@@ -41,14 +41,52 @@ function ThemeToggle() {
 export default function App() {
   const loadScripts = useStore((s) => s.loadScripts);
   const loadRuns = useStore((s) => s.loadRuns);
+  const loadAppInfo = useStore((s) => s.loadAppInfo);
+  const stopped = useStore((s) => s.stopped);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
+    loadAppInfo();
     loadScripts();
+  }, [loadAppInfo, loadScripts]);
+
+  // Called by the app window when it's closed while scripts are running.
+  useEffect(() => {
+    const w = window as unknown as { __augaConfirmQuit?: () => void };
+    w.__augaConfirmQuit = () => {
+      const { runs, quitApp } = useStore.getState();
+      const active = Object.values(runs).filter(
+        (r) => r.status === "running" || r.status === "awaiting_input",
+      ).length;
+      const msg = `Quit AUGA-Builder? ${active} running script${active === 1 ? "" : "s"} will be stopped.`;
+      if (confirm(msg)) quitApp();
+    };
+    return () => {
+      delete w.__augaConfirmQuit;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (stopped) return;
     loadRuns();
     const id = setInterval(loadRuns, 6000);
     return () => clearInterval(id);
-  }, [loadScripts, loadRuns]);
+  }, [loadRuns, stopped]);
+
+  if (stopped) {
+    return (
+      <div
+        className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center"
+        style={{ background: "var(--bg)" }}
+      >
+        <img src="/logo.svg" alt="" className="h-20 w-20" draggable={false} />
+        <h1 className="text-xl font-semibold">AUGA-Builder has stopped</h1>
+        <p className="max-w-sm text-sm" style={{ color: "var(--text-muted)" }}>
+          You can close this tab. Open the AUGA-Builder app again whenever you need it.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg)" }}>

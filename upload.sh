@@ -14,6 +14,12 @@
 #   ./upload.sh --message "..."                        # custom commit message
 #   ./upload.sh --no-wait                              # don't wait for the GitHub build to finish
 #
+# Versions: every run publishes a new release. By default it bumps the last
+# number (v1.0.1 -> v1.0.2). Pick a bigger step or an exact version with:
+#   ./upload.sh --minor              # v1.0.2 -> v1.1.0   (new features)
+#   ./upload.sh --major              # v1.1.0 -> v2.0.0   (big changes)
+#   ./upload.sh --version 1.4.0      # exactly v1.4.0
+#
 # Login: uses your GitHub CLI login (`gh auth login`), so git never asks for a
 # password. If the remote is an SSH link but your SSH key isn't added to
 # GitHub, the remote is switched to HTTPS so your gh login is used instead.
@@ -28,6 +34,8 @@ VISIBILITY="public"
 COMMIT_MESSAGE="Update AUGA-Builder"
 REMOTE_URL=""
 WAIT="1"
+BUMP="patch"
+EXACT_VERSION=""
 WORKFLOW_FILE="release.yml"
 
 while [ $# -gt 0 ]; do
@@ -39,8 +47,12 @@ while [ $# -gt 0 ]; do
     --message) COMMIT_MESSAGE="$2"; shift 2 ;;
     --no-wait) WAIT=""; shift ;;
     --watch) WAIT="1"; shift ;;
+    --patch) BUMP="patch"; shift ;;
+    --minor) BUMP="minor"; shift ;;
+    --major) BUMP="major"; shift ;;
+    --version) EXACT_VERSION="${2#v}"; shift 2 ;;
     git@*|ssh://*|https://*) REMOTE_URL="$1"; shift ;;
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1 (see ./upload.sh --help)" >&2; exit 1 ;;
   esac
 done
@@ -81,8 +93,8 @@ update_readme_links() {
 | OS | Download | Run |
 |---|---|---|
 | Windows (64-bit) | [$APP_NAME-windows-x64.zip](https://github.com/$repo/releases/latest/download/$APP_NAME-windows-x64.zip) | unzip, open the \`$APP_NAME\` folder, double-click \`$APP_NAME.exe\` |
-| macOS (Apple Silicon) | [$APP_NAME-macos-arm64.tar.gz](https://github.com/$repo/releases/latest/download/$APP_NAME-macos-arm64.tar.gz) | unzip, open the \`$APP_NAME\` folder, double-click \`$APP_NAME\` (first launch: right-click → Open, since it isn't Apple-notarized) |
-| Linux (64-bit) | [$APP_NAME-linux-x64.tar.gz](https://github.com/$repo/releases/latest/download/$APP_NAME-linux-x64.tar.gz) | unzip, \`cd $APP_NAME && ./$APP_NAME\` |
+| macOS (Apple Silicon) | [$APP_NAME-macos-arm64.tar.gz](https://github.com/$repo/releases/latest/download/$APP_NAME-macos-arm64.tar.gz) | unzip, double-click \`$APP_NAME.app\` (drag it to Applications if you like). First launch: right-click → Open, since it isn't Apple-notarized |
+| Linux (64-bit) | [$APP_NAME-linux-x64.tar.gz](https://github.com/$repo/releases/latest/download/$APP_NAME-linux-x64.tar.gz) | unzip, \`cd $APP_NAME && ./$APP_NAME\`. Run \`./add-to-app-menu.sh\` once to get it (with its icon) in your app menu |
 <!-- DOWNLOADS:END -->
 EOF
   awk -v blockfile="$block" '
@@ -178,11 +190,22 @@ git push -u origin "$BRANCH"
 echo "==> [5/6] Tagging a release (this starts the build on GitHub)"
 git fetch -q --tags origin || true
 LAST_TAG="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
-if [ -z "$LAST_TAG" ]; then
+if [ -n "$EXACT_VERSION" ]; then
+  NEXT_TAG="v$EXACT_VERSION"
+elif [ -z "$LAST_TAG" ]; then
   NEXT_TAG="v1.0.0"
 else
-  # vX.Y.Z -> vX.Y.(Z+1)
-  NEXT_TAG="$(echo "$LAST_TAG" | awk -F. '{ print $1"."$2"."($3+1) }')"
+  NEXT_TAG="$(echo "${LAST_TAG#v}" | awk -F. -v bump="$BUMP" '{
+    major = $1 + 0; minor = $2 + 0; patch = $3 + 0
+    if (bump == "major")      { major++; minor = 0; patch = 0 }
+    else if (bump == "minor") { minor++; patch = 0 }
+    else                      { patch++ }
+    printf "v%d.%d.%d", major, minor, patch
+  }')"
+fi
+if git rev-parse -q --verify "refs/tags/$NEXT_TAG" >/dev/null; then
+  echo "error: version $NEXT_TAG already exists. Pick another with --version X.Y.Z" >&2
+  exit 1
 fi
 git tag -a "$NEXT_TAG" -m "$APP_NAME $NEXT_TAG"
 git push -q origin "$NEXT_TAG"

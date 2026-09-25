@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { swatchFor, COLOR_NAMES } from "../colors";
-import { Folder, FolderOpen, RefreshCw, scriptIcon, SCRIPT_ICON_NAMES, Trash2 } from "../icons";
+import { Folder, FolderOpen, Package, RefreshCw, scriptIcon, SCRIPT_ICON_NAMES, Trash2 } from "../icons";
 import { useStore } from "../store";
 import type { BrowseEntry, ScriptInfo } from "../types";
 
@@ -309,6 +310,98 @@ function AddScriptPanel({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+function ScriptsFolderCard() {
+  const scriptsDir = useStore((s) => s.scriptsDir);
+  const packaged = useStore((s) => s.packaged);
+  const [error, setError] = useState<string | null>(null);
+  if (!scriptsDir) return null;
+  return (
+    <div
+      className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border p-4"
+      style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
+    >
+      <FolderOpen size={20} style={{ color: "var(--accent)" }} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">Your scripts folder</p>
+        <p className="truncate font-mono text-xs" style={{ color: "var(--text-muted)" }} title={scriptsDir}>
+          {scriptsDir}
+        </p>
+        <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>
+          {packaged
+            ? "Put your .py files here (subfolders are fine), then click Rescan for new scripts."
+            : "Dev mode: the whole project folder is scanned for .py files."}
+        </p>
+        {error && <p className="mt-1 text-xs" style={{ color: "#fb7185" }}>{error}</p>}
+      </div>
+      <button
+        onClick={() => {
+          setError(null);
+          api.openScriptsFolder().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+        }}
+        className="rounded-lg px-3.5 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+        style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+      >
+        Open folder
+      </button>
+    </div>
+  );
+}
+
+function InstallPackagesCard() {
+  const installPackages = useStore((s) => s.installPackages);
+  const navigate = useNavigate();
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function install() {
+    if (!value.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const run = await installPackages(value.trim());
+      navigate(`/runs/${run.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="mb-6 rounded-2xl border p-4"
+      style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
+    >
+      <p className="text-sm font-semibold">Install a Python package</p>
+      <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>
+        If a script says <span className="font-mono">No module named …</span>, install that package here. Separate
+        several with spaces.
+      </p>
+      <div className="mt-3 flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && install()}
+          placeholder="e.g. openpyxl   or   numpy==2.1"
+          className="flex-1 rounded-lg border bg-transparent px-3 py-2 font-mono text-sm outline-none focus:ring-2"
+          style={{ borderColor: "var(--border)" }}
+        />
+        <button
+          onClick={install}
+          disabled={busy || !value.trim()}
+          className="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+        >
+          <Package size={14} />
+          {busy ? "Starting…" : "Install"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs" style={{ color: "#fb7185" }}>{error}</p>}
+    </div>
+  );
+}
+
 export function Settings() {
   const scripts = useStore((s) => s.scripts);
   const loadScripts = useStore((s) => s.loadScripts);
@@ -342,6 +435,9 @@ export function Settings() {
           Rescan for new scripts
         </button>
       </header>
+
+      <ScriptsFolderCard />
+      <InstallPackagesCard />
 
       <div className="mb-8 flex flex-col gap-3">
         {scripts.map((script) => (

@@ -15,11 +15,18 @@ interface RunsState {
   runs: Record<string, RunSummary>;
   logs: Record<string, LogLine[]>;
   runOrder: string[]; // most-recently-started first
+  packaged: boolean; // running as the downloadable app (vs. dev mode)
+  mode: string | null; // "window" | "app-window" | "browser" | "none"
+  scriptsDir: string | null; // where the user drops their .py files
+  stopped: boolean; // user quit the app from the UI
 
+  loadAppInfo: () => Promise<void>;
+  quitApp: () => Promise<void>;
   loadScripts: () => Promise<void>;
   rescanScripts: () => Promise<void>;
   loadRuns: () => Promise<void>;
   startRun: (scriptId: string) => Promise<RunSummary>;
+  installPackages: (packages: string) => Promise<RunSummary>;
   ensureLive: (runId: string) => void;
   sendInput: (runId: string, text: string) => void;
   killRun: (runId: string) => void;
@@ -93,6 +100,29 @@ export const useStore = create<RunsState>((set, get) => ({
   runs: {},
   logs: {},
   runOrder: [],
+  packaged: false,
+  mode: null,
+  scriptsDir: null,
+  stopped: false,
+
+  loadAppInfo: async () => {
+    try {
+      const info = await api.appInfo();
+      set({ packaged: info.packaged, mode: info.mode ?? null, scriptsDir: info.scripts_dir ?? null });
+    } catch {
+      /* older backend without this endpoint: treat as dev mode */
+    }
+  },
+
+  quitApp: async () => {
+    for (const sock of sockets.values()) sock.close();
+    sockets.clear();
+    try {
+      await api.shutdown();
+    } finally {
+      set({ stopped: true });
+    }
+  },
 
   loadScripts: async () => {
     const scripts = await api.listScripts();
@@ -123,6 +153,16 @@ export const useStore = create<RunsState>((set, get) => ({
 
   startRun: async (scriptId: string) => {
     const run = await api.startRun(scriptId);
+    set((s) => ({
+      runs: { ...s.runs, [run.id]: run },
+      runOrder: [run.id, ...s.runOrder],
+    }));
+    get().ensureLive(run.id);
+    return run;
+  },
+
+  installPackages: async (packages: string) => {
+    const run = await api.installPackages(packages);
     set((s) => ({
       runs: { ...s.runs, [run.id]: run },
       runOrder: [run.id, ...s.runOrder],

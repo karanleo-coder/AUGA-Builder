@@ -1,3 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
+# Native app window (WebView2 on Windows, WebKit on macOS). Linux uses a
+# Chromium --app window or the browser instead, so it isn't needed there.
+pywebview==6.2.1; sys_platform != "linux"

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>AUGA-Builder</title>
+  <defs>
+    <!-- tile -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a3242"/>
+      <stop offset="1" stop-color="#0c1016"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="256" cy="262" r="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9aa8c4" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#9aa8c4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-200%" width="140%" height="500%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+
+    <!-- polished silver faces -->
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#e3e7ec"/>
+      <stop offset="1" stop-color="#c3c9d2"/>
+    </linearGradient>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f1f3f6"/>
+      <stop offset="0.45" stop-color="#cbd0d8"/>
+      <stop offset="1" stop-color="#99a1ac"/>
+    </linearGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a3abb6"/>
+      <stop offset="1" stop-color="#6a727d"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9dde3"/>
+      <stop offset="1" stop-color="#b3bac4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+
+  <!-- ground shadow -->
+  <ellipse cx="256" cy="366" rx="206" ry="16" fill="#000000" fill-opacity="0.55" filter="url(#soft)"/>
+
+  <!-- one silver bar ("biscuit"), 3/4 view -->
+  <g transform="translate(62 165)" stroke="#3a4049" stroke-width="5" stroke-linejoin="round">
+    <polygon points="340,190 388,136 354,20 306,74" fill="url(#side)"/>
+    <polygon points="34,74 306,74 354,20 82,20" fill="url(#top)"/>
+    <polygon points="0,190 340,190 306,74 34,74" fill="url(#front)"/>
+
+    <!-- stamped panel on the face -->
+    <polygon points="30,170 310,170 288,96 52,96" fill="url(#panel)"
+             stroke-opacity="0.45" stroke-width="3"/>
+    <!-- "Ag": silver's chemical symbol, embossed -->
+    <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-weight="700"
+       font-size="62" text-anchor="middle" stroke="none">
+      <text x="171" y="156" fill="#ffffff" fill-opacity="0.85">Ag</text>
+      <text x="170" y="154" fill="#5a626d">Ag</text>
+    </g>
+
+    <!-- polished edge highlight -->
+    <line x1="38" y1="72" x2="302" y2="72" stroke="#ffffff" stroke-opacity="0.9" stroke-width="3.5"/>
+  </g>
+
+  <!-- glints -->
+  <g fill="#ffffff">
+    <path d="M410 146 Q410 182 446 182 Q410 182 410 218 Q410 182 374 182 Q410 182 410 146 Z"/>
+    <path d="M110 150 Q110 164 124 164 Q110 164 110 178 Q110 164 96 164 Q110 164 110 150 Z" fill-opacity="0.7"/>
+  </g>
+</svg>

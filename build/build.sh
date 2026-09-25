@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the packaged desktop app for the CURRENT operating system
-# (macOS or Linux — see build.ps1 for Windows) into dist/AUGA-Builder/,
-# then archives it as dist/AUGA-Builder-<os>-<arch>.tar.gz.
+# (macOS or Linux — see build.ps1 for Windows): dist/AUGA-Builder.app on
+# macOS, dist/AUGA-Builder/ on Linux, then archives it as
+# dist/AUGA-Builder-<os>-<arch>.tar.gz.
 #
 # Requires: uv, node/npm, and a Python venv with backend/requirements.txt +
 # build/requirements-build.txt installed (this script creates one at
@@ -52,23 +53,69 @@ fi
 uv pip install --python "$RUNTIME_SRC/bin/python3" --break-system-packages -r scripts_requirements.txt
 
 echo "==> [4/5] Running PyInstaller"
-rm -rf "dist/$APP_NAME" build/pyinstaller-work
+# Version shown in the macOS app's Info: CI passes it from the git tag; a
+# local build falls back to the latest tag in this repo.
+if [ -z "${AUGA_VERSION:-}" ]; then
+  AUGA_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+  AUGA_VERSION="${AUGA_VERSION#v}"
+fi
+export AUGA_VERSION
+rm -rf "dist/$APP_NAME" "dist/$APP_NAME.app" build/pyinstaller-work
 "$BUILD_PY" -m PyInstaller "build/$APP_NAME.spec" --noconfirm --distpath dist --workpath build/pyinstaller-work
 
-echo "==> [5/5] Assembling final app bundle"
-APP_DIR="dist/$APP_NAME"
-mkdir -p "$APP_DIR/python-runtime"
-# Flatten the runtime (drop the versioned cpython-3.x.y-... folder name) so
-# appdirs.py can find it at a fixed, predictable path.
-cp -R "$RUNTIME_SRC"/. "$APP_DIR/python-runtime/"
-chmod +x "$APP_DIR/$APP_NAME" "$APP_DIR/python-runtime/bin/"* 2>/dev/null || true
-
+echo "==> [5/5] Assembling final app bundle (version $AUGA_VERSION)"
 ARCHIVE="dist/${APP_NAME}-${PLATFORM_TAG}-${ARCH_NAME}.tar.gz"
 rm -f "$ARCHIVE"
-tar -czf "$ARCHIVE" -C dist "$APP_NAME"
+
+if [ "$PLATFORM_TAG" = "macos" ]; then
+  # macOS: a double-clickable AUGA-Builder.app with the silver-bar icon.
+  # The portable Python goes *inside* the app, so the app still works when
+  # moved to /Applications (or run from macOS's read-only quarantine copy).
+  APP_BUNDLE="dist/$APP_NAME.app"
+  RUNTIME_DEST="$APP_BUNDLE/Contents/Resources/python-runtime"
+  mkdir -p "$RUNTIME_DEST"
+  cp -R "$RUNTIME_SRC"/. "$RUNTIME_DEST/"
+  # Adding files changed the bundle, so re-seal it with an ad-hoc signature;
+  # otherwise macOS reports the downloaded app as "damaged".
+  codesign --force --deep --sign - "$APP_BUNDLE"
+  codesign --verify --deep --strict "$APP_BUNDLE"
+  tar -czf "$ARCHIVE" -C dist "$APP_NAME.app"
+  RESULT="$APP_BUNDLE  (double-click it)"
+else
+  # Linux: a folder with the executable, the icon, and a helper that adds
+  # AUGA-Builder (with its icon) to the desktop's app menu.
+  APP_DIR="dist/$APP_NAME"
+  mkdir -p "$APP_DIR/python-runtime"
+  # Flatten the runtime (drop the versioned cpython-3.x.y-... folder name) so
+  # appdirs.py can find it at a fixed, predictable path.
+  cp -R "$RUNTIME_SRC"/. "$APP_DIR/python-runtime/"
+  cp assets/icon.png "$APP_DIR/$APP_NAME.png"
+  cat > "$APP_DIR/add-to-app-menu.sh" <<'MENU'
+#!/usr/bin/env bash
+# Adds AUGA-Builder, with its icon, to your desktop's app menu.
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$HOME/.local/share/applications"
+cat > "$HOME/.local/share/applications/auga-builder.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=AUGA-Builder
+Comment=Run your Python scripts from a clean dashboard
+Exec="$DIR/AUGA-Builder"
+Icon=$DIR/AUGA-Builder.png
+Terminal=false
+Categories=Development;Utility;
+EOF
+chmod +x "$HOME/.local/share/applications/auga-builder.desktop"
+echo "Added. Look for AUGA-Builder in your app menu."
+MENU
+  chmod +x "$APP_DIR/$APP_NAME" "$APP_DIR/add-to-app-menu.sh" "$APP_DIR/python-runtime/bin/"* 2>/dev/null || true
+  tar -czf "$ARCHIVE" -C dist "$APP_NAME"
+  RESULT="$APP_DIR/  (run ./$APP_NAME inside it)"
+fi
 
 echo ""
 echo "Done."
-echo "  App folder: $APP_DIR/  (run ./$APP_NAME inside it)"
-echo "  Archive:    $ARCHIVE"
+echo "  App:     $RESULT"
+echo "  Archive: $ARCHIVE"
 du -sh "$ARCHIVE" 2>/dev/null || true

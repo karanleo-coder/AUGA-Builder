@@ -1,15 +1,24 @@
-# AUGA-Builder
+<p align="center"><img src="assets/icon.png" alt="AUGA-Builder" width="128"></p>
 
-A local web front end for Python scripts — a sidebar to pick a script, a
-live console with clean input boxes instead of raw terminal commands, and a
-dashboard with circular progress rings for everything currently running.
-Runs multiple scripts at once and picks up new ones automatically.
+<h1 align="center">AUGA-Builder</h1>
 
-It ships two ways:
+<p align="center">Run your Python scripts from a clean, simple app. No terminal, no setup.</p>
 
-- **A packaged app** — download, unzip, double-click. No Python, Node, or
-  install step required on the machine that runs it.
-- **A dev setup** — for working on the app itself (see [DEV.md](DEV.md)).
+<p align="center"><img src="assets/screenshot-dashboard.png" alt="The AUGA-Builder dashboard" width="820"></p>
+
+AUGA-Builder turns Python scripts into something anyone can click and run.
+Pick a script from the sidebar, press **Run**, and answer its questions in
+normal text boxes instead of typing into a terminal. You can run several
+scripts at once and watch each one's progress ring on the dashboard.
+
+- **Nothing to install.** The app brings its own Python. It doesn't matter
+  what Python, if any, is on your computer.
+- **Opens in its own window.** It's a normal app, not a browser tab or a
+  terminal.
+- **Works with ordinary scripts.** Any script that asks questions with
+  `input()` works as-is; you don't have to change it.
+- **Private.** Everything runs on your own computer. The app only listens on
+  `127.0.0.1`, so nothing on your network or the internet can reach it.
 
 ## Download
 
@@ -19,79 +28,125 @@ It ships two ways:
 | OS | Download | Run |
 |---|---|---|
 | Windows (64-bit) | [AUGA-Builder-windows-x64.zip](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-windows-x64.zip) | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder.exe` |
-| macOS (Apple Silicon) | [AUGA-Builder-macos-arm64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-macos-arm64.tar.gz) | unzip, open the `AUGA-Builder` folder, double-click `AUGA-Builder` (first launch: right-click → Open, since it isn't Apple-notarized) |
-| Linux (64-bit) | [AUGA-Builder-linux-x64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-linux-x64.tar.gz) | unzip, `cd AUGA-Builder && ./AUGA-Builder` |
+| macOS (Apple Silicon) | [AUGA-Builder-macos-arm64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-macos-arm64.tar.gz) | unzip, double-click `AUGA-Builder.app` (drag it to Applications if you like). First launch: right-click → Open, since it isn't Apple-notarized |
+| Linux (64-bit) | [AUGA-Builder-linux-x64.tar.gz](https://github.com/karanleo-coder/AUGA-Builder/releases/latest/download/AUGA-Builder-linux-x64.tar.gz) | unzip, `cd AUGA-Builder && ./AUGA-Builder`. Run `./add-to-app-menu.sh` once to get it (with its icon) in your app menu |
 <!-- DOWNLOADS:END -->
 
-These links always point at the newest release. GitHub builds them from
-this repo's source on every release — nothing is built on anyone's own
-machine.
+These links always get the newest version.
 
-## Using the app
+## Opening it the first time
 
-It opens `http://127.0.0.1:8756` in your default browser automatically —
-that tab *is* the app. Closing it doesn't stop the server; quit by closing
-the terminal/process the app started (or press Ctrl+C if you launched it
-from a terminal).
+AUGA-Builder is free and isn't signed with a paid developer certificate, so
+your computer asks once whether you trust it.
 
-**Where things live**, right next to the app folder:
-- `scripts/` — drop your own `.py` files in here (subfolders OK) and hit
-  **Rescan for new scripts** in Settings, or browse to one there directly.
-  It comes pre-seeded with three example scripts on first launch.
-- `data/` — the app's own state (which scripts are registered, etc.).
-- `python-runtime/` — a real, self-contained Python interpreter the app
-  uses to run scripts. It's independent of whatever Python (if any) is
-  installed on your machine, and already has the example scripts'
-  dependencies (`requests`, `pandas`, `beautifulsoup4`, `trafilatura`,
-  `pyarrow`) installed. A brand-new script that needs something else can
-  have it installed into that same interpreter — see [DEV.md](DEV.md).
+**Windows.** Unzip the download, open the `AUGA-Builder` folder and
+double-click `AUGA-Builder.exe`. If you see *"Windows protected your PC"*,
+click **More info → Run anyway**. Keep the whole folder together; the app
+needs the files next to it.
 
-Nothing about how a script works needs to change for the console to run it:
-scripts using plain `input()` (including password-style prompts) work with
-zero configuration.
+**macOS.** Unzip the download and move `AUGA-Builder.app` to Applications
+(optional). The first time, **right-click the app → Open → Open**. If macOS
+only offers *Done* or *Move to Bin*, open **System Settings → Privacy &
+Security**, scroll down and click **Open Anyway**. After that, open it like
+any other app. It needs a Mac with Apple Silicon (M1 or newer).
 
-## For maintainers: publishing a new release
+**Linux.** Unzip the download, then in a terminal:
 
 ```bash
-./upload.sh
+cd AUGA-Builder
+./AUGA-Builder              # start it
+./add-to-app-menu.sh        # optional, once: adds it (with its icon) to your app menu
 ```
 
-That's the whole flow. It:
+On Linux the app opens in its own window through Chrome, Chromium, Edge or
+Brave if one of them is installed. Without them, it opens in your normal
+browser.
 
-1. Pushes the project's source to GitHub (backend, frontend, build scripts —
-   never build outputs).
-2. Pushes a new version tag (`v1.0.0`, then `v1.0.1`, …).
-3. That tag starts the **Build & Release** workflow on GitHub, which builds
-   Windows, macOS and Linux packages on GitHub's own machines, test-launches
-   each one, and publishes them on a GitHub Release.
-4. Waits for that build to finish and prints the release link.
+## Using AUGA-Builder
 
-Nothing is built on your own computer, and the download links above always
-point at the newest release.
+<p align="center"><img src="assets/screenshot-console.png" alt="A script asking a question" width="820"></p>
 
-**Logging in:** it uses your existing GitHub CLI login (`gh auth login`), so
-it won't ask for a password. If your remote is an SSH link but your SSH key
-isn't added to GitHub, it switches that remote to HTTPS and pushes with your
-`gh` login instead.
+1. **Pick a script** in the sidebar, or press **Run** on one of the cards on
+   the dashboard.
+2. **Answer its questions.** When a script asks something, a box appears at
+   the bottom of the screen. Type your answer and press **Enter** or
+   **Send**. Answers to passwords and tokens are hidden.
+3. **Watch it work.** Everything the script prints appears as it happens.
+   Press **Stop** to cancel it.
+4. **Run more at the same time.** Start other scripts whenever you like. The
+   dashboard shows a ring for each one:
+   - a spinning ring means it's working;
+   - a yellow dot means it's waiting for your answer;
+   - a check mark means it finished, and a cross means it failed.
 
-**Where it pushes:** the existing `origin` remote if there is one. Otherwise
-it asks you to paste a repo link, or creates a new repo named
-`AUGA-Builder` if you leave it blank. You can also pass the link directly:
+   Point at a ring to see what it's doing; click it to open that script.
 
-```bash
-./upload.sh git@github.com:you/AUGA-Builder.git   # push to this repo
-./upload.sh --repo my-repo-name                   # create a new repo with this name
-./upload.sh --no-wait                             # don't wait for the GitHub build to finish
-```
+The sun/moon button at the top right switches between light and dark mode.
 
-See the comments at the top of `upload.sh` for every option.
+**Closing the app:** close the window. If a script is still running, it
+asks before stopping it. Opening AUGA-Builder again while it's already open
+just brings the window back.
 
-To build a local package yourself without publishing anything:
+## Adding your own scripts
 
-```bash
-./build/build.sh          # macOS / Linux -> dist/AUGA-Builder/
-./build/build.ps1         # Windows (PowerShell) -> dist\AUGA-Builder\
-```
+Your scripts live in the **AUGA-Builder** folder in your home folder:
 
-Full architecture notes, the dev (hot-reload) workflow, and how packaging
-actually works under the hood are in [DEV.md](DEV.md).
+| | Scripts folder |
+|---|---|
+| Windows | `C:\Users\<you>\AUGA-Builder\scripts` |
+| macOS | `/Users/<you>/AUGA-Builder/scripts` |
+| Linux | `/home/<you>/AUGA-Builder/scripts` |
+
+You don't need to remember this: go to **Settings → Open folder**.
+
+1. Put your `.py` file in that folder. Subfolders are fine; the sidebar
+   groups scripts by folder.
+2. In **Settings**, click **Rescan for new scripts**.
+3. It appears in the sidebar. In Settings you can also rename it and give it
+   an icon and a colour.
+
+Three example scripts come with the app so you can try it straight away. You
+can remove them from Settings if you don't need them.
+
+**If a script needs another package** (it stops with *"No module named
+…"*), type the package name into **Settings → Install a Python package**,
+for example `openpyxl`. The installation shows its progress like a normal
+script, and after that every script can use the package. `requests`,
+`pandas`, `beautifulsoup4`, `trafilatura` and `pyarrow` are already
+included.
+
+## Updating
+
+Download the latest version from the link above and replace the old app
+with it. Your scripts, installed packages and settings are kept, because
+they live in your `AUGA-Builder` home folder, not inside the app.
+
+## Uninstalling
+
+Delete the app (on Windows and Linux, the whole `AUGA-Builder` folder you
+unzipped). To also remove your scripts and settings, delete the
+`AUGA-Builder` folder in your home folder.
+
+## Something not working?
+
+- **The window didn't appear.** Open the app again; if it's already running,
+  that brings the window back. You can also visit `http://127.0.0.1:8756`
+  in a browser.
+- **A script failed.** Its window shows the error. *"No module named X"*
+  means it needs a package: install X from Settings.
+- **The app itself won't start.** Its log is `launcher.log` in the `data`
+  folder inside your `AUGA-Builder` home folder. Please include it when you
+  report a problem.
+- **Windows: the app opens in an Edge window instead of its own.** Your PC
+  is missing Microsoft's WebView2 component (built into Windows 11).
+  Installing the
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+  fixes it.
+
+Report problems or ideas on the
+[Issues page](https://github.com/karanleo-coder/AUGA-Builder/issues).
+
+---
+
+Working on AUGA-Builder itself, or publishing a new version? See
+[DEV.md](DEV.md).

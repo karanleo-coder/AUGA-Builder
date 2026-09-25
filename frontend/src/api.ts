@@ -60,6 +60,19 @@ export const api = {
       body: JSON.stringify({ text }),
     }).then((r) => j(r)),
   killRun: (runId: string) => fetch(`/api/runs/${runId}/kill`, { method: "POST" }).then((r) => j(r)),
+
+  appInfo: () =>
+    fetch("/api/app-info").then((r) =>
+      j<{ name: string; packaged: boolean; mode?: string | null; scripts_dir?: string }>(r),
+    ),
+  openScriptsFolder: () => fetch("/api/open-scripts-folder", { method: "POST" }).then((r) => j(r)),
+  installPackages: (packages: string) =>
+    fetch("/api/packages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packages }),
+    }).then((r) => j<RunSummary>(r)),
+  shutdown: () => fetch("/api/shutdown", { method: "POST" }).then((r) => j(r)),
 };
 
 export function connectRunStream(

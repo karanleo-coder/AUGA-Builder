@@ -71,13 +71,17 @@ export function RunPage() {
           <Icon size={22} color={swatch.text} />
         </span>
         <div className="min-w-0 flex-1">
-          <Link
-            to={`/scripts/${run.script_id}`}
-            className="text-lg font-semibold hover:underline"
-            style={{ color: "var(--text)" }}
-          >
-            {run.script_name}
-          </Link>
+          {run.script_id.startsWith("__") ? (
+            <span className="text-lg font-semibold">{run.script_name}</span>
+          ) : (
+            <Link
+              to={`/scripts/${run.script_id}`}
+              className="text-lg font-semibold hover:underline"
+              style={{ color: "var(--text)" }}
+            >
+              {run.script_name}
+            </Link>
+          )}
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--text-faint)" }}>
             <span
               className="rounded-full px-2 py-0.5 font-medium"

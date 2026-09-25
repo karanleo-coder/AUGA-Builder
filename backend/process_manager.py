@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from appdirs import FROZEN, bundled_python
+from appdirs import FROZEN, PACKAGES_DIR, bundled_python
 from models import LogLine, RunDetail, RunStatus, RunSummary, ScriptInfo
 
 MAX_LOG_LINES = 2000
@@ -59,6 +59,14 @@ def _extract_progress(line: str) -> Optional[float]:
         except ValueError:
             pass
     return None
+
+
+def pip_install_command(packages: list[str]) -> list[str]:
+    """pip install into the user's packages folder, using the same Python
+    that runs scripts."""
+    PACKAGES_DIR.mkdir(parents=True, exist_ok=True)
+    return [PYTHON_BIN, "-m", "pip", "install", "--upgrade",
+            "--target", str(PACKAGES_DIR), *packages]
 
 
 def _command_for(script_path: Path) -> list[str]:
@@ -150,7 +158,14 @@ class ProcessManager:
         for r in finished[: len(finished) - MAX_FINISHED_RUNS]:
             self.runs.pop(r.id, None)
 
-    def start_run(self, script: ScriptInfo) -> Run:
+    def start_run(
+        self,
+        script: ScriptInfo,
+        command: Optional[list[str]] = None,
+        cwd: Optional[Path] = None,
+    ) -> Run:
+        """Run a script (or, with `command`, any command such as a pip
+        install) with live output, input prompts and a progress ring."""
         self._loop = asyncio.get_running_loop()
 
         run_id = str(uuid.uuid4())
@@ -163,16 +178,24 @@ class ProcessManager:
         env["PYTHONIOENCODING"] = "utf-8"
         env["FORCE_COLOR"] = "0"
         env["NO_COLOR"] = "1"
+        env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+        # Packages the user installed from Settings are importable everywhere.
+        env["PYTHONPATH"] = os.pathsep.join(
+            p for p in (str(PACKAGES_DIR), os.environ.get("PYTHONPATH", "")) if p
+        )
 
         script_path = Path(script.path)
         process = subprocess.Popen(
-            _command_for(script_path),
+            command or _command_for(script_path),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            cwd=str(script_path.parent),
+            cwd=str(cwd or script_path.parent),
             env=env,
             bufsize=0,
+            # The packaged Windows app has no console of its own, so without
+            # this every script run would pop up an empty black console window.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         run.process = process
 
@@ -265,6 +288,12 @@ class ProcessManager:
         except Exception:
             pass
         return True
+
+    def kill_all(self) -> None:
+        """Stop every script that's still running (used when the app quits)."""
+        for run in list(self.runs.values()):
+            if run.process is not None and run.process.poll() is None:
+                self.kill_run(run.id)
 
     def _finalize(self, run: Run) -> None:
         if run.idle_handle:
