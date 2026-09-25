@@ -9,9 +9,12 @@ checks that:
      expected kind of window (--expect-mode, comma-separated alternatives),
   2. a bundled example script really runs on the bundled Python runtime and
      reaches its first input() prompt,
-  3. launching the app a second time brings the existing window back
+  3. a folder and a .zip can be added (entry points found, junk skipped,
+     path escapes blocked, "replace" works) and their scripts run,
+  4. requests from other websites are refused,
+  5. launching the app a second time brings the existing window back
      instead of starting a duplicate,
-  4. Quit closes the window and stops the app.
+  6. Quit closes the window and stops the app.
 On failure it prints the app's launcher.log.
 """
 from __future__ import annotations
@@ -23,7 +26,10 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 BASE = "http://127.0.0.1:8756"
@@ -35,6 +41,82 @@ def call(method: str, path: str, body: dict | None = None, timeout: float = 5):
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
+
+
+def status_of(method: str, path: str, body: bytes | None = None, headers: dict | None = None) -> int:
+    req = urllib.request.Request(BASE + path, data=body, method=method, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def upload(files: dict[str, bytes]) -> str:
+    """Upload files like the page does (browser mode / drag-and-drop)."""
+    upload_id = call("POST", "/api/import/uploads", {})["id"]
+    for rel, data in files.items():
+        q = urllib.parse.quote(rel)
+        assert status_of("PUT", f"/api/import/uploads/{upload_id}?path={q}", data) == 200
+    return upload_id
+
+
+def run_to_end(script_id: str, timeout: float = 60) -> dict:
+    run = call("POST", "/api/runs", {"script_id": script_id})
+    return wait_for(
+        lambda: (r := call("GET", f"/api/runs/{run['id']}"))["status"] not in ("running", "awaiting_input") and r,
+        timeout, "the imported script to finish")
+
+
+def check_imports() -> None:
+    # 1) a .zip with one top folder: an entry point, a helper module, junk,
+    #    and a hostile entry trying to write outside the target folder
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("silver_tool/main.py",
+                   "import helpers\nif __name__ == '__main__':\n    print(helpers.greet())\n")
+        z.writestr("silver_tool/helpers.py", "def greet():\n    return 'hello from an imported zip'\n")
+        z.writestr("silver_tool/node_modules/junk.js", "x")
+        z.writestr("../escaped.py", "print('should never be written')\n")
+    uid = upload({"silver_tool.zip": buf.getvalue()})
+    res = call("POST", f"/api/import/uploads/{uid}/finish", {}, timeout=30)
+    folder = Path(res["folder"])
+    names = [s["name"] for s in res["scripts"]]
+    assert names == ["Silver Tool"], f"expected only the entry point, got {names}"
+    assert not (folder / "node_modules").exists(), "junk folder was imported"
+    assert not (folder.parent / "escaped.py").exists() and not (folder.parent.parent / "escaped.py").exists(), \
+        "zip entry escaped the target folder"
+    r = run_to_end(res["scripts"][0]["id"])
+    out = [l["text"] for l in r["log"] if l["stream"] == "out"]
+    assert r["status"] == "completed" and "hello from an imported zip" in out, r
+    print("ok  imported a .zip: found its entry point, skipped junk, blocked path escape, ran it")
+
+    # 2) the same name again -> conflict, then replace
+    uid = upload({"silver_tool.zip": buf.getvalue()})
+    assert status_of("POST", f"/api/import/uploads/{uid}/finish", b"{}",
+                     {"Content-Type": "application/json"}) == 409
+    call("POST", f"/api/import/uploads/{uid}/finish", {"replace": True}, timeout=30)
+    print("ok  importing it again asks before replacing")
+
+    # 3) a folder (files uploaded with their relative paths)
+    uid = upload({
+        "bar_counter/app.py": b"from lib.count import total\nprint('bars:', total())\n",
+        "bar_counter/lib/count.py": b"def total():\n    return 3\n",
+        "bar_counter/lib/__init__.py": b"",
+    })
+    res = call("POST", f"/api/import/uploads/{uid}/finish", {}, timeout=30)
+    assert [s["name"] for s in res["scripts"]] == ["Bar Counter"], res["scripts"]
+    r = run_to_end(res["scripts"][0]["id"])
+    assert r["status"] == "completed" and "bars: 3" in [l["text"] for l in r["log"]], r
+    print("ok  imported a folder with a package inside and ran it")
+
+
+def check_local_only() -> None:
+    evil = {"Origin": "https://evil.example", "Content-Type": "application/json"}
+    assert status_of("POST", "/api/packages", b'{"packages": "requests"}', evil) == 403
+    assert status_of("GET", "/api/scripts", None, {"Host": "evil.example:8756"}) == 403
+    assert status_of("GET", "/api/scripts", None, {"Origin": BASE}) == 200
+    print("ok  requests from other websites are refused")
 
 
 def wait_for(check, timeout: float, what: str):
@@ -98,6 +180,9 @@ def main() -> int:
         r = wait_for(first_prompt, 60, "the example script's first prompt")
         print(f"ok  bundled Python ran a script, which asked: {r['awaiting_prompt']!r}")
         call("POST", f"/api/runs/{run['id']}/kill")
+
+        check_imports()
+        check_local_only()
 
         second = subprocess.run([str(exe)], env=env, timeout=60)
         assert second.returncode == 0, f"second launch exited with {second.returncode}"

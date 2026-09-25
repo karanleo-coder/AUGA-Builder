@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { swatchFor } from "../colors";
 import { RunRing } from "../components/RunRing";
-import { Play, scriptIcon } from "../icons";
+import { Play, Plus, scriptIcon } from "../icons";
 import { useStore } from "../store";
 
 export function Dashboard() {
@@ -59,9 +59,19 @@ export function Dashboard() {
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-4 text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
-          Launch a script
-        </h2>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
+            Launch a script
+          </h2>
+          <button
+            onClick={() => navigate("/settings")}
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-inset)]"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <Plus size={13} />
+            Add scripts
+          </button>
+        </div>
         {scripts.length === 0 ? (
           <div
             className="rounded-2xl border border-dashed px-6 py-8 text-center text-sm"

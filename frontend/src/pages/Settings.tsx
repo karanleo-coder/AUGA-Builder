@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { AddScripts } from "../components/AddScripts";
 import { swatchFor, COLOR_NAMES } from "../colors";
 import { Folder, FolderOpen, Package, RefreshCw, scriptIcon, SCRIPT_ICON_NAMES, Trash2 } from "../icons";
 import { useStore } from "../store";
@@ -252,11 +253,10 @@ function AddScriptPanel({ onAdded }: { onAdded: () => void }) {
 
   return (
     <div className="rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}>
-      <p className="mb-3 text-sm font-semibold">Add a script</p>
+      <p className="mb-3 text-sm font-semibold">Pick a file already in your scripts folder</p>
       <p className="mb-3 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        Drop a new <code>.py</code> file anywhere in the project folder, then either{" "}
-        <strong>rescan</strong> above to pick it up automatically, or browse for it here to set a
-        custom name, icon and color.
+        For a <code>.py</code> file that's in your scripts folder but not in the sidebar (for example
+        a helper that also runs on its own), choose it here and give it a name, icon and color.
       </p>
       <FileBrowser onPick={pick} />
 
@@ -436,6 +436,7 @@ export function Settings() {
         </button>
       </header>
 
+      <AddScripts />
       <ScriptsFolderCard />
       <InstallPackagesCard />
 

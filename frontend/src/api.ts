@@ -63,7 +63,13 @@ export const api = {
 
   appInfo: () =>
     fetch("/api/app-info").then((r) =>
-      j<{ name: string; packaged: boolean; mode?: string | null; scripts_dir?: string }>(r),
+      j<{
+        name: string;
+        packaged: boolean;
+        mode?: string | null;
+        scripts_dir?: string;
+        native_dialogs?: boolean;
+      }>(r),
     ),
   openScriptsFolder: () => fetch("/api/open-scripts-folder", { method: "POST" }).then((r) => j(r)),
   installPackages: (packages: string) =>

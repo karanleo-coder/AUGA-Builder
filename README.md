@@ -89,7 +89,25 @@ just brings the window back.
 
 ## Adding your own scripts
 
-Your scripts live in the **AUGA-Builder** folder in your home folder:
+Go to **Settings → Add scripts** (or **Add scripts** on the dashboard) and
+either **drop** something on it or use the buttons:
+
+- **a folder** with your project in it (**Choose folder…**),
+- **a .zip** of that folder, or **a single .py file** (**Choose .zip or .py…**).
+
+That's all. AUGA-Builder copies it into your scripts folder and works out
+which files are the scripts you run, so helper files like `utils.py` don't
+clutter the sidebar. If the project has a `requirements.txt`, the packages
+in it are installed for you, and you can watch that happen. Add the same
+project again later and it offers to replace the old copy with the new one.
+
+It picks the scripts to show like this: files with
+`if __name__ == "__main__":` in them; otherwise files called `main.py`,
+`app.py`, `run.py` and so on; otherwise the `.py` files at the top of the
+folder. To show another file too, use **Pick a file already in your
+scripts folder** at the bottom of Settings.
+
+Everything you add lives in the **AUGA-Builder** folder in your home folder:
 
 | | Scripts folder |
 |---|---|
@@ -97,21 +115,14 @@ Your scripts live in the **AUGA-Builder** folder in your home folder:
 | macOS | `/Users/<you>/AUGA-Builder/scripts` |
 | Linux | `/home/<you>/AUGA-Builder/scripts` |
 
-You don't need to remember this: go to **Settings → Open folder**.
-
-1. Put your `.py` file in that folder. Subfolders are fine; the sidebar
-   groups scripts by folder.
-2. In **Settings**, click **Rescan for new scripts**.
-3. It appears in the sidebar. In Settings you can also rename it and give it
-   an icon and a colour.
-
-Three example scripts come with the app so you can try it straight away. You
-can remove them from Settings if you don't need them.
+You can also copy files in there yourself (**Settings → Open folder**), then
+click **Rescan for new scripts**. In Settings you can rename any script and
+give it an icon and a colour. Three example scripts come with the app so you
+can try it straight away.
 
 **If a script needs another package** (it stops with *"No module named
 …"*), type the package name into **Settings → Install a Python package**,
-for example `openpyxl`. The installation shows its progress like a normal
-script, and after that every script can use the package. `requests`,
+for example `openpyxl`. After that every script can use it. `requests`,
 `pandas`, `beautifulsoup4`, `trafilatura` and `pyarrow` are already
 included.
 

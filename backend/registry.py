@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import shutil
 import threading
 import time
@@ -19,11 +20,59 @@ from models import ScriptCreate, ScriptInfo, ScriptUpdate
 
 REGISTRY_PATH = DATA_DIR / "registry.json"
 
-# Folders we never want to treat as "script sources" when auto-discovering.
-IGNORE_DIRS = {
-    ".git", ".venv", "venv", "node_modules", "__pycache__", "data",
-    "backend", "frontend", ".pytest_cache", "dist", "build",
+# Folders that never hold scripts (virtualenvs, caches, VCS, macOS zip junk).
+JUNK_DIRS = {
+    ".git", ".hg", ".svn", ".venv", "venv", "env", "node_modules", "__pycache__",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".idea", ".vscode",
+    "__MACOSX", "site-packages",
 }
+# In dev mode the whole repo is scanned, so skip the app's own folders too.
+IGNORE_DIRS = JUNK_DIRS if FROZEN else JUNK_DIRS | {"data", "backend", "frontend", "dist", "build", "assets"}
+
+# Files that are never something you'd "run".
+NOT_ENTRY_FILES = {"__init__.py", "setup.py", "conftest.py"}
+GENERIC_ENTRY_NAMES = {"main", "app", "run", "cli", "start", "__main__"}
+_MAIN_GUARD = re.compile(r"""if\s+__name__\s*==\s*['"]__main__['"]""")
+
+
+def is_ignored(path: Path, root: Path) -> bool:
+    """True if `path` sits inside a junk folder (only looks below `root`)."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        parts = path.parts
+    return any(p in IGNORE_DIRS or (p.startswith(".") and p not in {".", ".."}) for p in parts[:-1])
+
+
+def _has_main_guard(py: Path) -> bool:
+    try:
+        return bool(_MAIN_GUARD.search(py.read_text(encoding="utf-8", errors="ignore")))
+    except OSError:
+        return False
+
+
+def find_entry_points(root: Path) -> list[Path]:
+    """The runnable scripts in a project folder, not its helper modules:
+    files with `if __name__ == "__main__":`; otherwise main.py/app.py/...;
+    otherwise the top-level .py files (or, failing that, every .py file)."""
+    pys = sorted(
+        p for p in root.rglob("*.py")
+        if p.is_file()
+        and not is_ignored(p, root)
+        and p.name not in NOT_ENTRY_FILES
+        and not p.name.startswith("test_")
+        and not p.name.endswith("_test.py")
+    )
+    if not pys:
+        return []
+    guarded = [p for p in pys if _has_main_guard(p)]
+    if guarded:
+        return guarded
+    named = [p for p in pys if p.stem in GENERIC_ENTRY_NAMES]
+    if named:
+        return named
+    top = [p for p in pys if p.parent == root]
+    return top or pys
 
 DEFAULT_ICONS = ["download", "search", "database", "sparkles", "rocket", "terminal", "cpu", "globe"]
 DEFAULT_COLORS = ["violet", "sky", "emerald", "amber", "rose", "cyan", "fuchsia", "lime"]
@@ -50,8 +99,9 @@ def _guess_description(py_path: Path) -> str:
 
 
 def _pretty_name(py_path: Path) -> str:
-    stem = py_path.stem.replace("_", " ").replace("-", " ")
-    return stem.title()
+    # "my_tool/main.py" reads better as "My Tool" than "Main".
+    base = py_path.parent.name if py_path.stem in GENERIC_ENTRY_NAMES else py_path.stem
+    return base.replace("_", " ").replace("-", " ").strip().title() or "Script"
 
 
 class Registry:
@@ -102,30 +152,75 @@ class Registry:
         payload = [s.model_dump() for s in self._scripts.values()]
         REGISTRY_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
+    def _new_info(self, py_path: Path) -> ScriptInfo:
+        idx = len(self._scripts)
+        return ScriptInfo(
+            id=str(uuid.uuid4()),
+            name=_pretty_name(py_path),
+            description=_guess_description(py_path),
+            path=str(py_path),
+            folder=py_path.parent.name,
+            icon=DEFAULT_ICONS[idx % len(DEFAULT_ICONS)],
+            color=DEFAULT_COLORS[idx % len(DEFAULT_COLORS)],
+            created_at=time.time(),
+        )
+
+    def _register_paths(self, paths: list[Path]) -> list[ScriptInfo]:
+        """Register any of `paths` not known yet; returns all of them."""
+        by_path = {s.path: s for s in self._scripts.values()}
+        result = []
+        for py in paths:
+            info = by_path.get(str(py))
+            if info is None:
+                info = self._new_info(py)
+                self._scripts[info.id] = info
+                by_path[info.path] = info
+            result.append(info)
+        return result
+
     def _auto_discover(self) -> None:
-        """On first boot (or whenever a folder has new .py files not yet
-        registered), pick them up automatically so the sidebar isn't empty."""
-        known_paths = {s.path for s in self._scripts.values()}
-        changed = False
-        for py_path in sorted(SCRIPTS_DIR.rglob("*.py")):
-            if any(part in IGNORE_DIRS for part in py_path.parts):
+        """Pick up new scripts: each folder inside the scripts folder is one
+        project (only its entry points get registered, not helper modules);
+        loose .py files directly in the scripts folder are scripts too."""
+        if not SCRIPTS_DIR.exists():
+            return
+        before = len(self._scripts)
+        found: list[Path] = []
+        for child in sorted(SCRIPTS_DIR.iterdir()):
+            if child.name in IGNORE_DIRS or child.name.startswith("."):
                 continue
-            if str(py_path) in known_paths:
-                continue
-            idx = len(self._scripts)
-            info = ScriptInfo(
-                id=str(uuid.uuid4()),
-                name=_pretty_name(py_path),
-                description=_guess_description(py_path),
-                path=str(py_path),
-                folder=py_path.parent.name,
-                icon=DEFAULT_ICONS[idx % len(DEFAULT_ICONS)],
-                color=DEFAULT_COLORS[idx % len(DEFAULT_COLORS)],
-                created_at=time.time(),
-            )
-            self._scripts[info.id] = info
-            changed = True
-        if changed:
+            if child.is_dir():
+                found += find_entry_points(child)
+            elif child.suffix == ".py" and child.name not in NOT_ENTRY_FILES:
+                found.append(child)
+        self._register_paths(found)
+        if len(self._scripts) != before:
+            self._save()
+
+    def register_folder(self, folder: Path) -> list[ScriptInfo]:
+        """Register the runnable scripts in one (newly added) project folder."""
+        with self._lock:
+            entries = find_entry_points(folder)
+            known = {s.path for s in self._scripts.values()}
+            infos = self._register_paths(entries)
+            # A project with a single script is named after the project
+            # ("Currency Converter"), not its file ("Convert").
+            if len(infos) == 1 and infos[0].path not in known:
+                pretty = folder.name.replace("_", " ").replace("-", " ").strip().title()
+                if pretty:
+                    infos[0] = infos[0].model_copy(update={"name": pretty})
+                    self._scripts[infos[0].id] = infos[0]
+            self._save()
+            return infos
+
+    def remove_under(self, folder: Path) -> None:
+        """Forget every script inside `folder` (it's being replaced)."""
+        folder = folder.resolve()
+        with self._lock:
+            for sid, info in list(self._scripts.items()):
+                p = Path(info.path).resolve()
+                if p == folder or folder in p.parents:
+                    del self._scripts[sid]
             self._save()
 
     # ---------- public API ----------

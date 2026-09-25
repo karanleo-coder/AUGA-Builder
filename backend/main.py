@@ -6,24 +6,61 @@ import re
 import sys
 import time
 
+from pathlib import Path
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
+import importer
 from appdirs import FRONTEND_DIST, PACKAGES_DIR, SCRIPTS_DIR
 from models import InputPayload, RunDetail, RunSummary, ScriptCreate, ScriptInfo, ScriptUpdate
 from process_manager import manager, pip_install_command
 from registry import registry
 
 app = FastAPI(title="AUGA-Builder API")
+importer.cleanup_stale_staging()  # half-finished uploads from a previous run
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ---------------- Local-only guard ----------------
+# This server can run scripts and install packages, so only the app's own
+# page may use it. Browsers let any website send requests (and open
+# WebSockets) to 127.0.0.1; they always label them with an Origin header,
+# so anything from a non-local origin is refused. Checking Host as well
+# stops DNS-rebinding tricks (evil.example resolving to 127.0.0.1).
+
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _hostname(value: str) -> str:
+    try:
+        return (urlsplit(value if "//" in value else "//" + value).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+class LocalOnlyMiddleware:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+            host_ok = _hostname(headers.get("host", "")) in _LOCAL_HOSTS
+            origin = headers.get("origin")
+            origin_ok = origin is None or _hostname(origin) in _LOCAL_HOSTS
+            cross_site = headers.get("sec-fetch-site") == "cross-site"
+            if not (host_ok and origin_ok) or cross_site:
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    await JSONResponse({"detail": "forbidden"}, status_code=403)(scope, receive, send)
+                return
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(LocalOnlyMiddleware)
 
 
 # ---------------- Scripts ----------------
@@ -127,6 +164,111 @@ async def install_packages(payload: dict):
     return run.summary()
 
 
+# ---------------- Adding scripts from a folder / .zip ----------------
+
+def _start_requirements_install(result: importer.ImportResult):
+    if result.requirements is None:
+        return None
+    info = ScriptInfo(
+        id="__packages__",
+        name=f"Install requirements for {result.folder.name}",
+        description="",
+        path=str(result.requirements),
+        folder="packages",
+        icon="package",
+        color="amber",
+        created_at=time.time(),
+    )
+    cmd = pip_install_command(["-r", str(result.requirements)])
+    return manager.start_run(info, command=cmd, cwd=result.folder).summary()
+
+
+async def _run_import(fn, *args, **kwargs) -> dict:
+    """Run a (blocking) import and turn the outcome into a response."""
+    try:
+        result = await run_in_threadpool(fn, *args, **kwargs)
+    except importer.ImportConflict as e:
+        return JSONResponse(
+            {"detail": f'A folder named "{e.name}" is already in your scripts.', "conflict": e.name},
+            status_code=409,
+        )
+    except importer.ImportError_ as e:
+        raise HTTPException(400, str(e))
+    install = _start_requirements_install(result)
+    return {
+        "folder": str(result.folder),
+        "scripts": [s.model_dump() for s in result.scripts],
+        "requirements_run": install.model_dump() if install else None,
+    }
+
+
+@app.post("/api/import/pick")
+async def import_pick(payload: dict):
+    """App window only: open the OS's own folder / file picker."""
+    if request_pick is None:
+        raise HTTPException(400, "native file dialogs aren't available here")
+    kind = payload.get("kind")
+    if kind not in ("folder", "file"):
+        raise HTTPException(400, "kind must be 'folder' or 'file'")
+    picked = await run_in_threadpool(request_pick, kind)
+    if not picked:
+        return {"cancelled": True}
+    response = await _run_import(importer.import_path, Path(picked))
+    if isinstance(response, JSONResponse) and response.status_code == 409:
+        body = json.loads(response.body)
+        body["path"] = picked  # so the page can retry with replace=true
+        return JSONResponse(body, status_code=409)
+    return response
+
+
+@app.post("/api/import/path")
+async def import_from_path(payload: dict):
+    """Import a folder/.zip/.py by path (after a native pick)."""
+    path = str(payload.get("path") or "")
+    if not path:
+        raise HTTPException(400, "path is required")
+    return await _run_import(
+        importer.import_path, Path(path), name=payload.get("name"), replace=bool(payload.get("replace"))
+    )
+
+
+@app.post("/api/import/uploads")
+def import_upload_start():
+    """Browser mode / drag-and-drop: files are uploaded one by one."""
+    return {"id": importer.new_upload()}
+
+
+@app.put("/api/import/uploads/{upload_id}")
+async def import_upload_file(upload_id: str, path: str, request: Request):
+    try:
+        target = importer.upload_target(upload_id, path)
+    except importer.ImportError_ as e:
+        raise HTTPException(400, str(e))
+    if target is None:
+        return {"skipped": path}
+    written = 0
+    with open(target, "wb") as out:
+        async for chunk in request.stream():
+            written += len(chunk)
+            if written > importer.MAX_TOTAL_BYTES:
+                raise HTTPException(413, "file is too big (over 500 MB)")
+            out.write(chunk)
+    return {"ok": True}
+
+
+@app.post("/api/import/uploads/{upload_id}/finish")
+async def import_upload_finish(upload_id: str, payload: dict):
+    return await _run_import(
+        importer.finish_upload, upload_id, payload.get("name"), bool(payload.get("replace"))
+    )
+
+
+@app.delete("/api/import/uploads/{upload_id}")
+def import_upload_discard(upload_id: str):
+    importer.discard_upload(upload_id)
+    return {"ok": True}
+
+
 @app.get("/api/runs/{run_id}", response_model=RunDetail)
 def get_run(run_id: str):
     run = manager.get(run_id)
@@ -218,6 +360,7 @@ def health():
 request_shutdown = None  # closes the app window / stops the server
 request_focus = None  # brings the app window back to the front
 ui_mode = None  # "window" | "app-window" | "browser" | "none"
+request_pick = None  # (kind) -> path | None: the OS's native folder/file picker
 
 
 def _in_background(fn) -> None:
@@ -241,6 +384,7 @@ def app_info():
         "packaged": request_shutdown is not None,
         "mode": ui_mode,
         "scripts_dir": str(SCRIPTS_DIR),
+        "native_dialogs": request_pick is not None,
     }
 
 

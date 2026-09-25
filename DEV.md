@@ -144,6 +144,48 @@ crashes on that at startup. The launcher points them at `launcher.log` and
 passes `log_config=None` to uvicorn. Script subprocesses are started with
 `CREATE_NO_WINDOW` so each run doesn't pop up a console window.
 
+## Testing the Mac app locally
+
+```bash
+./test-mac.sh               # build, run the automatic checks, then open the app
+./test-mac.sh --no-build    # re-test the last build without rebuilding
+./test-mac.sh --fresh       # open it as a brand-new user would (temporary home folder)
+./test-mac.sh --all-modes   # also test the Chrome app-window mode Linux uses
+./test-mac.sh --no-open     # checks only
+```
+
+It builds with `build/build.sh`, verifies the code signature, unpacks the
+exact archive users download into a temporary folder, and runs
+`build/smoke_test.py` against it — the same checks GitHub runs for every
+release: the app starts in its own window, runs a bundled script, imports a
+.zip and a folder (entry points found, junk skipped, path escapes blocked,
+"replace" works), refuses requests from other websites, reopens instead of
+starting twice, and quits. The checks use a temporary home folder, so your
+real `~/AUGA-Builder` isn't touched.
+
+## Adding scripts from a folder or .zip (`backend/importer.py`)
+
+In the app window, "Choose folder / .zip" opens the OS's native picker
+(`window.create_file_dialog`) and the backend copies straight from disk. In
+browser/app-window mode, or on drag-and-drop, the page uploads the files one
+by one (`PUT /api/import/uploads/{id}?path=…`) into a staging folder and then
+calls `/finish`. Either way `importer.import_path` copies the project into
+`scripts/<name>` (a zip with a single top folder uses that folder), skipping
+junk (`venv`, `node_modules`, `.git`, `__pycache__`, `__MACOSX`) and refusing
+absolute paths, `..`, symlinks, and more than 5000 files / 500 MB.
+`registry.find_entry_points` decides which files show in the sidebar, and a
+`requirements.txt` is installed as a normal run (into `~/AUGA-Builder/packages`).
+A name clash returns 409 and the page asks before replacing.
+
+## Security: local only
+
+The server can run scripts and install packages, so `LocalOnlyMiddleware` in
+`backend/main.py` refuses any HTTP request or WebSocket whose `Origin` isn't
+`127.0.0.1`/`localhost` (browsers send it on cross-site requests, so other
+websites can't drive the app) or whose `Host` isn't local (blocks DNS
+rebinding). There is deliberately no CORS middleware. The server only
+listens on `127.0.0.1`.
+
 ## Publishing a release
 
 Every run of `./upload.sh` publishes a new version:

@@ -204,9 +204,22 @@ def _run_native_window(url: str, app_module) -> None:
         window.on_top = True  # nudge the OS to raise it above other windows
         window.on_top = False
 
+    def pick(kind: str):
+        """Native Finder / Explorer picker for "Add scripts"."""
+        if kind == "folder":
+            result = window.create_file_dialog(webview.FileDialog.FOLDER)
+        else:
+            result = window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("Zip archive or Python script (*.zip;*.py)",),
+            )
+        return result[0] if result else None
+
     window.events.closing += on_closing
     app_module.request_shutdown = close_for_real
     app_module.request_focus = bring_to_front
+    app_module.request_pick = pick
     app_module.ui_mode = "window"
 
     storage = DATA_DIR / "window-storage"
@@ -270,10 +283,12 @@ def _run_app_window(url: str, app_module) -> bool:
     ]
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    we_closed_it = threading.Event()
 
     def close_app_window():
         # Chrome treats the first SIGTERM as "please close" (which can stall),
         # and a second one as "exit now"; a hard kill is the last resort.
+        we_closed_it.set()
         logging.info("Closing app window (pid %s)", proc.pid)
         for send, grace in ((proc.terminate, 3), (proc.terminate, 3), (proc.kill, 3)):
             if proc.poll() is not None:
@@ -294,7 +309,9 @@ def _run_app_window(url: str, app_module) -> bool:
     logging.info("Opened app window with %s", browser)
 
     code = proc.wait()
-    if time.time() - started < 4 and code != 0:
+    # A browser that dies right away (and not because we closed it) couldn't
+    # start: fall back to a normal browser tab instead of quitting the app.
+    if not we_closed_it.is_set() and time.time() - started < 4 and code != 0:
         logging.warning("App window exited immediately (code %s); falling back", code)
         app_module.request_shutdown = app_module.request_focus = None
         return False

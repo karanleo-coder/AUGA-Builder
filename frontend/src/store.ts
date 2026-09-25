@@ -18,6 +18,7 @@ interface RunsState {
   packaged: boolean; // running as the downloadable app (vs. dev mode)
   mode: string | null; // "window" | "app-window" | "browser" | "none"
   scriptsDir: string | null; // where the user drops their .py files
+  nativeDialogs: boolean; // app window: OS folder/file pickers available
   stopped: boolean; // user quit the app from the UI
 
   loadAppInfo: () => Promise<void>;
@@ -27,6 +28,7 @@ interface RunsState {
   loadRuns: () => Promise<void>;
   startRun: (scriptId: string) => Promise<RunSummary>;
   installPackages: (packages: string) => Promise<RunSummary>;
+  trackRun: (run: RunSummary) => void;
   ensureLive: (runId: string) => void;
   sendInput: (runId: string, text: string) => void;
   killRun: (runId: string) => void;
@@ -103,12 +105,18 @@ export const useStore = create<RunsState>((set, get) => ({
   packaged: false,
   mode: null,
   scriptsDir: null,
+  nativeDialogs: false,
   stopped: false,
 
   loadAppInfo: async () => {
     try {
       const info = await api.appInfo();
-      set({ packaged: info.packaged, mode: info.mode ?? null, scriptsDir: info.scripts_dir ?? null });
+      set({
+        packaged: info.packaged,
+        mode: info.mode ?? null,
+        scriptsDir: info.scripts_dir ?? null,
+        nativeDialogs: !!info.native_dialogs,
+      });
     } catch {
       /* older backend without this endpoint: treat as dev mode */
     }
@@ -163,12 +171,16 @@ export const useStore = create<RunsState>((set, get) => ({
 
   installPackages: async (packages: string) => {
     const run = await api.installPackages(packages);
+    get().trackRun(run);
+    return run;
+  },
+
+  trackRun: (run: RunSummary) => {
     set((s) => ({
       runs: { ...s.runs, [run.id]: run },
-      runOrder: [run.id, ...s.runOrder],
+      runOrder: s.runOrder.includes(run.id) ? s.runOrder : [run.id, ...s.runOrder],
     }));
     get().ensureLive(run.id);
-    return run;
   },
 
   ensureLive: (runId: string) => {
