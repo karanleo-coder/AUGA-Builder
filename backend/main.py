@@ -361,6 +361,9 @@ request_shutdown = None  # closes the app window / stops the server
 request_focus = None  # brings the app window back to the front
 ui_mode = None  # "window" | "app-window" | "browser" | "none"
 request_pick = None  # (kind) -> path | None: the OS's native folder/file picker
+# Set by launcher.py before the server starts, so the page never sees a
+# half-started app as "dev mode" (the window hooks above arrive a moment later).
+launched_as_app = False
 
 
 def _in_background(fn) -> None:
@@ -381,7 +384,7 @@ def _in_background(fn) -> None:
 def app_info():
     return {
         "name": "AUGA-Builder",
-        "packaged": request_shutdown is not None,
+        "packaged": launched_as_app,
         "mode": ui_mode,
         "scripts_dir": str(SCRIPTS_DIR),
         "native_dialogs": request_pick is not None,

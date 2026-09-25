@@ -158,8 +158,8 @@ def main() -> int:
         wait_for(server_up, 90, "the server to start")
         info = call("GET", "/api/app-info")
         assert info["packaged"] is True, info
-        # the mode is set once the window is being created
-        info = wait_for(lambda: (i := call("GET", "/api/app-info"))["mode"] and i, 30, "the window")
+        # the window mode is set a moment later, once the window is attached
+        info = wait_for(lambda: (i := call("GET", "/api/app-info"))["mode"] and i, 60, "the window")
         if expect:
             assert info["mode"] in expect, f"expected window mode {expect}, got {info['mode']!r}"
             if info["mode"] != expect[0]:

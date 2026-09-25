@@ -109,16 +109,23 @@ export const useStore = create<RunsState>((set, get) => ({
   stopped: false,
 
   loadAppInfo: async () => {
-    try {
-      const info = await api.appInfo();
-      set({
-        packaged: info.packaged,
-        mode: info.mode ?? null,
-        scriptsDir: info.scripts_dir ?? null,
-        nativeDialogs: !!info.native_dialogs,
-      });
-    } catch {
-      /* older backend without this endpoint: treat as dev mode */
+    // In the app, the window finishes attaching a moment after the page
+    // loads, so keep asking briefly until the window mode is known.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const info = await api.appInfo();
+        set({
+          packaged: info.packaged,
+          mode: info.mode ?? null,
+          scriptsDir: info.scripts_dir ?? null,
+          nativeDialogs: !!info.native_dialogs,
+        });
+        if (!info.packaged || info.mode) return;
+      } catch {
+        /* older backend without this endpoint: treat as dev mode */
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 500));
     }
   },
 

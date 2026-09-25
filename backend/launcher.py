@@ -350,6 +350,7 @@ def main() -> None:
     # "main:app" target would be resolved dynamically at runtime and could be
     # missed by PyInstaller's dependency analysis.
 
+    app_module.launched_as_app = True
     server = Server(app_module, _pick_port())
     if not server.start():
         logging.error("Server failed to start")
